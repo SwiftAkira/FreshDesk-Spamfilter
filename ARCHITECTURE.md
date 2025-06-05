@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Freshdesk Spam Filter is a modular, AI-powered system designed to automatically detect and handle spam tickets in Freshdesk using local OLLAMA models. The architecture follows a clean separation of concerns with distinct layers for API integration, AI processing, and business logic.
+The Freshdesk Spam Filter is a modular, AI-powered system designed to automatically detect and handle spam tickets in Freshdesk using the OpenAI API. The architecture follows a clean separation of concerns with distinct layers for API integration, AI processing, and business logic.
 
 ## High-Level Architecture
 
@@ -23,15 +23,15 @@ The Freshdesk Spam Filter is a modular, AI-powered system designed to automatica
 │  └─────────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
-│  │   Freshdesk Client  │  │        OLLAMA Client            │  │
-│  │  • API Integration  │  │  • AI Model Communication      │  │
+│  │   Freshdesk Client  │  │        OpenAI Client            │  │
+│  │  • API Integration  │  │  • OpenAI API Communication    │  │
 │  │  • Ticket Fetching  │  │  • Spam Analysis               │  │
 │  │  • Action Execution │  │  • Confidence Scoring          │  │
 │  └─────────────────────┘  └─────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
-│  │   Freshdesk API     │  │        OLLAMA Server            │  │
-│  │   (External)        │  │        (Local)                  │  │
+│  │   Freshdesk API     │  │        OpenAI API               │  │
+│  │   (External)        │  │        (External)               │  │
 │  └─────────────────────┘  └─────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -45,14 +45,15 @@ The Freshdesk Spam Filter is a modular, AI-powered system designed to automatica
 - **Responsibilities**:
   - Command-line interface handling
   - Configuration validation
-  - Scheduling and continuous operation
-  - User interface and reporting
+  - Scheduling and continuous operation (for local execution)
+  - Lambda handler (`lambda_function.py`) for AWS deployment
+  - User interface and reporting (for local execution)
 - **Dependencies**: All other components
 
 #### Configuration Management (`config.py`)
 - **Purpose**: Centralized configuration handling
 - **Responsibilities**:
-  - Environment variable loading
+  - Environment variable loading (from `.env` locally or Lambda environment)
   - Configuration validation
   - Default value management
   - Type conversion and validation
@@ -61,11 +62,11 @@ The Freshdesk Spam Filter is a modular, AI-powered system designed to automatica
 #### Spam Filter Engine (`spam_filter.py`)
 - **Purpose**: Core business logic for spam detection
 - **Responsibilities**:
-  - Ticket processing orchestration
+  - Ticket processing orchestration (batch for local, single for Lambda)
   - Spam detection workflow
   - Action decision making
   - Statistics tracking
-- **Dependencies**: `freshdesk_client`, `ollama_client`, `config`
+- **Dependencies**: `freshdesk_client`, `openai_client`, `config`
 
 ### 2. Integration Components
 
@@ -75,171 +76,168 @@ The Freshdesk Spam Filter is a modular, AI-powered system designed to automatica
   - HTTP API communication
   - Ticket fetching and filtering
   - Conversation extraction
-  - Ticket updates and tagging
+  - Ticket updates, tagging, and note addition
 - **Dependencies**: `requests`, `config`
 
-#### OLLAMA Client (`ollama_client.py`)
-- **Purpose**: AI model integration layer
+#### OpenAI Client (`openai_client.py`)
+- **Purpose**: OpenAI API integration layer
 - **Responsibilities**:
-  - OLLAMA server communication
-  - Prompt engineering
-  - Response parsing
-  - Error handling
-- **Dependencies**: `ollama`, `config`
+  - OpenAI API communication
+  - Prompt engineering for spam detection
+  - Response parsing (expecting JSON for spam score and reasoning)
+  - Error handling for API calls
+- **Dependencies**: `openai`, `config`
 
 ## Data Flow
 
-### 1. Ticket Processing Flow
+### 1. Ticket Processing Flow (Conceptual - varies for local vs Lambda)
 
 ```
-┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Scheduler │───▶│  Spam Filter    │───▶│  Freshdesk      │
-│             │    │  Engine         │    │  Client         │
-└─────────────┘    └─────────────────┘    └─────────────────┘
-                            │                       │
-                            ▼                       ▼
-                   ┌─────────────────┐    ┌─────────────────┐
-                   │  OLLAMA Client  │    │  Freshdesk API  │
-                   └─────────────────┘    └─────────────────┘
-                            │                       │
-                            ▼                       ▼
-                   ┌─────────────────┐    ┌─────────────────┐
-                   │  OLLAMA Server  │    │  New Tickets    │
-                   └─────────────────┘    └─────────────────┘
+External Trigger (Freshdesk Webhook for Lambda / Scheduler for Local)
+           │
+           ▼
+┌─────────────────┐    ┌─────────────────┐
+│  Main/Lambda    │───▶│  Spam Filter    │
+│  Handler        │    │  Engine         │
+└─────────────────┘    └─────────────────┘
+         │                      │
+         ▼                      ▼
+┌─────────────────┐    ┌─────────────────┐
+│ Freshdesk Client│    │ OpenAI Client   │
+└─────────────────┘    └─────────────────┘
+         │                      │
+         ▼                      ▼
+┌─────────────────┐    ┌─────────────────┐
+│ Freshdesk API   │    │ OpenAI API      │
+└─────────────────┘    └─────────────────┘
 ```
 
-### 2. Detailed Processing Sequence
+### 2. Detailed Processing Sequence (Illustrative for a single ticket)
 
-1. **Ticket Fetching**:
-   ```
-   Scheduler → SpamFilter.process_tickets()
-   SpamFilter → FreshdeskClient.get_tickets(only_new=True)
-   FreshdeskClient → Freshdesk API (/api/v2/tickets)
-   ```
+1. **Ticket Ingestion**:
+   - **Lambda**: API Gateway receives Freshdesk webhook data, triggers `lambda_function.lambda_handler`.
+   - **Local**: `Scheduler` triggers `SpamFilter.process_tickets()`.
+   - `SpamFilter` receives/fetches ticket data.
 
-2. **Message Extraction**:
+2. **Message Extraction** (if applicable, for context):
    ```
-   SpamFilter → FreshdeskClient.get_first_customer_message()
-   FreshdeskClient → Freshdesk API (/api/v2/tickets/{id}/conversations)
-   FreshdeskClient → Filter for first customer message
+   SpamFilter → FreshdeskClient.get_first_customer_message() (or uses provided description)
+   FreshdeskClient → Freshdesk API (if full details needed)
    ```
 
 3. **Spam Analysis**:
    ```
-   SpamFilter → OllamaClient.analyze_spam()
-   OllamaClient → OLLAMA Server (chat completion)
-   OllamaClient → Parse JSON response
+   SpamFilter → OpenAIClient.analyze_spam(subject, description, sender_email, is_system_validated)
+   OpenAIClient → OpenAI API (chat completion with spam detection prompt)
+   OpenAIClient → Parse JSON response (is_spam, confidence, reasoning)
    ```
 
 4. **Action Execution**:
    ```
-   SpamFilter → FreshdeskClient.add_tag_to_ticket()
-   SpamFilter → FreshdeskClient.mark_as_spam() (if high confidence)
-   FreshdeskClient → Freshdesk API (PUT /api/v2/tickets/{id})
+   SpamFilter determines action based on confidence and thresholds.
+   SpamFilter → FreshdeskClient.add_note_to_ticket()
+   SpamFilter → FreshdeskClient.mark_as_spam() (assign agent, set tags, set status)
+   FreshdeskClient → Freshdesk API (POST for notes, PUT for ticket updates)
    ```
 
 ## Security Architecture
 
 ### 1. Authentication & Authorization
-- **Freshdesk**: API key-based authentication
-- **OLLAMA**: Local server (no authentication required)
-- **Credentials**: Stored in environment variables only
+- **Freshdesk**: API key-based authentication.
+- **OpenAI**: API key-based authentication.
+- **Credentials**: Stored in environment variables (`.env` locally, Lambda environment variables in AWS).
 
 ### 2. Data Privacy
-- **Local Processing**: All AI analysis happens locally via OLLAMA
-- **No External Data Sharing**: Ticket content never leaves your infrastructure
-- **Minimal Data Retention**: No persistent storage of ticket content
+- **OpenAI API**: Ticket subject, description, and sender email are sent to the OpenAI API for analysis. Review OpenAI's data usage and privacy policies.
+- **Minimal Data Retention**: The application itself does not persistently store ticket content beyond processing.
 
 ### 3. Security Best Practices
-- Environment variable configuration
-- Input validation and sanitization
-- Error handling without data exposure
-- Secure HTTP communication (HTTPS only for Freshdesk)
+- Environment variable configuration for secrets.
+- Input validation (primarily on configuration).
+- Error handling without sensitive data exposure in logs.
+- Secure HTTP communication (HTTPS) for all external API calls.
 
 ## Scalability Considerations
 
-### 1. Performance Characteristics
-- **Throughput**: ~10-50 tickets per minute (depending on AI model)
-- **Memory Usage**: ~1-4GB (depending on OLLAMA model)
-- **CPU Usage**: Moderate (AI inference is primary load)
+### 1. Performance Characteristics (OpenAI API dependent)
+- **Throughput**: Dependent on OpenAI API response times and rate limits for the chosen model.
+- **Memory Usage**: Primarily for Python application logic; AI model memory is managed by OpenAI.
+- **CPU Usage**: Low for the application itself; primary computation is offloaded to OpenAI.
 
 ### 2. Scaling Strategies
-- **Horizontal**: Multiple instances with different Freshdesk domains
-- **Vertical**: Larger OLLAMA models for better accuracy
-- **Batch Processing**: Configurable batch sizes for optimal performance
+- **Lambda**: AWS Lambda scales automatically based on incoming request volume (webhook triggers).
+- **OpenAI Model Selection**: Choose different OpenAI models based on cost, speed, and accuracy requirements.
+- **Batch Processing (Local)**: Configurable batch sizes for local execution.
 
 ### 3. Bottlenecks
-- **OLLAMA Inference**: AI model processing time
-- **Freshdesk API**: Rate limits (see API documentation)
-- **Network Latency**: API call overhead
+- **OpenAI API**: Latency, rate limits, or availability issues.
+- **Freshdesk API**: Rate limits (see API documentation).
+- **Network Latency**: API call overhead for both services.
 
 ## Error Handling Strategy
 
 ### 1. Error Categories
-- **Configuration Errors**: Missing or invalid settings
-- **Network Errors**: API connectivity issues
-- **AI Errors**: OLLAMA server problems
-- **Business Logic Errors**: Unexpected data formats
+- **Configuration Errors**: Missing or invalid settings.
+- **Network Errors**: API connectivity issues to Freshdesk or OpenAI.
+- **AI Errors**: OpenAI API errors (e.g., authentication, rate limits, model issues, invalid responses).
+- **Business Logic Errors**: Unexpected data formats or workflow issues.
 
 ### 2. Recovery Mechanisms
-- **Retry Logic**: Automatic retries for transient failures
-- **Graceful Degradation**: Continue processing other tickets on single failures
-- **Circuit Breaker**: Stop processing on repeated failures
-- **Logging**: Comprehensive error logging for debugging
+- **Retry Logic**: Implemented for some API calls (e.g., initial Freshdesk ticket fetch).
+- **Graceful Degradation**: Continue processing other tickets on single failures (in batch mode).
+- **Logging**: Comprehensive error logging for debugging, including API error responses where available.
 
-## Monitoring & Observability
+## Monitoring & Observability (Primarily via AWS CloudWatch for Lambda)
 
 ### 1. Metrics
-- Tickets processed per hour
-- Spam detection accuracy
-- Processing time per ticket
-- Error rates by component
+- Lambda invocations, duration, error rates.
+- API Gateway metrics (requests, latency, errors).
+- Custom metrics can be added (e.g., spam detected count).
 
 ### 2. Logging
-- Structured logging with levels
-- Request/response logging for debugging
-- Performance metrics
-- Security events
+- Structured logging with levels, output to AWS CloudWatch Logs.
+- Request/response logging for debugging critical API interactions.
+- Performance metrics from Lambda.
 
-### 3. Health Checks
-- OLLAMA server connectivity
-- Freshdesk API accessibility
-- Configuration validation
-- Model availability
+### 3. Health Checks (Conceptual)
+- OpenAI API accessibility (indirectly checked on each call).
+- Freshdesk API accessibility (indirectly checked on each call).
+- Configuration validation at startup/invocation.
 
 ## Extension Points
 
-### 1. New AI Models
-- Implement `OllamaClient` interface
-- Add model-specific configuration
-- Update prompt engineering
+### 1. New AI Providers/Models
+- Create a new client class similar to `OpenAIClient` implementing a common analysis interface.
+- Update `SpamFilter` to use the new client.
+- Add model-specific configuration.
+- Adapt prompt engineering as needed.
 
 ### 2. Additional Actions
-- Extend `SpamFilter.handle_spam_ticket()`
-- Add new action types
-- Implement custom workflows
+- Extend `SpamFilter.handle_spam_ticket()` or add new methods.
+- Add new action types (e.g., sending notifications, escalating).
+- Implement custom workflows.
 
-### 3. Multiple Platforms
-- Create new client classes (e.g., `ZendeskClient`)
-- Implement common interface
-- Add platform-specific configuration
+### 3. Multiple Ticketing Platforms
+- Create new client classes (e.g., `ZendeskClient`) for the target platform's API.
+- Implement a common interface for ticket operations.
+- Add platform-specific configuration.
 
 ## Technology Stack
 
 ### Core Technologies
-- **Python 3.8+**: Main programming language
-- **OLLAMA**: Local AI model server
-- **Freshdesk API v2**: Ticket management platform
+- **Python 3.8+**: Main programming language.
+- **OpenAI API**: Cloud-based AI service for spam analysis.
+- **Freshdesk API v2**: Ticket management platform.
+- **AWS Lambda & API Gateway** (for deployed version).
 
 ### Key Dependencies
-- **requests**: HTTP client for API communication
-- **ollama**: OLLAMA Python client
-- **python-dotenv**: Environment variable management
-- **colorama**: Terminal color output
-- **schedule**: Task scheduling
+- **requests**: HTTP client for Freshdesk API communication.
+- **openai**: OpenAI Python client.
+- **python-dotenv**: Environment variable management (for local execution).
+- **colorama**: Terminal color output (for local execution).
+- **schedule**: Task scheduling (for local continuous mode).
 
 ### Development Tools
-- **pytest**: Testing framework
-- **black**: Code formatting
-- **mypy**: Type checking
-- **flake8**: Linting
+- **pytest**: Testing framework.
+- **Git & GitHub**: Version control.
+- Standard Python linters/formatters (e.g., Black, Flake8).
