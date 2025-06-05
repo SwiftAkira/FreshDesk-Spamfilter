@@ -16,15 +16,19 @@ Configuration management class that handles environment variables and applicatio
 
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `FRESHDESK_DOMAIN` | `str` | `None` | Freshdesk domain (e.g., company.freshdesk.com) |
+| `FRESHDESK_DOMAIN` | `str` | `None` | Freshdesk subdomain (e.g., `yourcompany`) |
 | `FRESHDESK_API_KEY` | `str` | `None` | Freshdesk API key for authentication |
-| `OLLAMA_HOST` | `str` | `http://localhost:11434` | OLLAMA server URL |
-| `OLLAMA_MODEL` | `str` | `llama3.2` | AI model name to use |
-| `SPAM_THRESHOLD` | `float` | `0.7` | Confidence threshold for spam detection |
-| `CHECK_INTERVAL_MINUTES` | `int` | `5` | Minutes between processing cycles |
-| `MAX_TICKETS_PER_BATCH` | `int` | `50` | Maximum tickets to process per batch |
+| `OPENAI_API_KEY` | `str` | `None` | OpenAI API Key |
+| `OPENAI_MODEL_NAME` | `str` | `gpt-3.5-turbo` | OpenAI model name to use |
+| `SPAM_THRESHOLD` | `float` | `0.7` | Confidence threshold for initial spam detection |
+| `AUTO_CLOSE_SPAM_THRESHOLD` | `float` | `0.75` | Confidence threshold to automatically close a ticket as spam |
+| `AGENT_ID_TO_ASSIGN_SPAM` | `int` | `None` | (Optional via env) Agent ID to assign spam tickets to before closing |
+| `CHECK_INTERVAL_MINUTES` | `int` | `5` | Minutes between processing cycles (local continuous mode) |
+| `MAX_TICKETS_PER_BATCH` | `int` | `50` | Maximum tickets to process per batch (local continuous mode) |
 | `PROCESS_NEW_TICKETS_ONLY` | `bool` | `True` | Whether to process only new tickets |
 | `LOG_LEVEL` | `str` | `INFO` | Logging level |
+| `DRY_RUN_MODE` | `bool` | `False` | If True, no actual changes are made to Freshdesk |
+| `IS_LAMBDA_ENVIRONMENT` | `bool` | `False` | True if running in AWS Lambda environment |
 
 #### Methods
 
@@ -47,7 +51,7 @@ except ValueError as e:
 ##### `get_freshdesk_url() -> str`
 Constructs the base Freshdesk API URL.
 
-**Returns**: Base API URL (e.g., `https://company.freshdesk.com/api/v2`)
+**Returns**: Base API URL (e.g., `https://yourcompany.freshdesk.com/api/v2`)
 
 **Raises**: `ValueError` if `FRESHDESK_DOMAIN` is not configured
 
@@ -90,7 +94,7 @@ new_tickets = client.get_tickets(only_new=True, limit=10)
 
 ##### `get_ticket(ticket_id: int) -> Dict`
 
-Fetches a specific ticket by ID.
+Fetches a specific ticket by ID. Attempts to get description, retries without if initial attempt fails.
 
 **Parameters**:
 - `ticket_id` (int): The ticket ID to fetch
@@ -121,7 +125,7 @@ Extracts the first customer message from a ticket, ignoring agent responses.
 - `ticket_id` (int): The ticket ID
 - `subject` (str): Ticket subject
 - `description` (str): First customer message content
-- `sender_email` (str): Sender identifier
+- `sender_email` (str): Sender identifier (requester_id)
 - `created_at` (str): Message timestamp
 - `conversation_id` (Optional[int]): Conversation ID if found
 
@@ -137,11 +141,11 @@ Updates a ticket with new information.
 
 **Returns**: Updated ticket dictionary
 
-**Raises**: `requests.exceptions.RequestException` on API errors
+**Raises**: `requests.exceptions.RequestException` on API errors (logs detailed error from response)
 
 ##### `add_tag_to_ticket(ticket_id: int, tag: str) -> Dict`
 
-Adds a tag to a ticket.
+Adds a specific tag to a ticket if it's not already present.
 
 **Parameters**:
 - `ticket_id` (int): The ticket ID
@@ -153,7 +157,10 @@ Adds a tag to a ticket.
 
 ##### `mark_as_spam(ticket_id: int) -> Dict`
 
-Marks a ticket as spam by updating status and adding tags.
+Marks a ticket as spam. Performs a sequence of operations:
+1. Assigns to a pre-configured agent (Agent ID `80059226092` or from `Config.AGENT_ID_TO_ASSIGN_SPAM`).
+2. Sets tags exclusively to `['Auto-Spam-Detected']`.
+3. Sets status to 5 (Closed/Spam).
 
 **Parameters**:
 - `ticket_id` (int): The ticket ID to mark as spam
@@ -162,47 +169,62 @@ Marks a ticket as spam by updating status and adding tags.
 
 **Raises**: `Exception` on processing errors
 
+##### `add_note_to_ticket(ticket_id: int, note_body: str, private: bool = True) -> Dict`
+
+Adds a note to a ticket.
+
+**Parameters**:
+- `ticket_id` (int): The ticket ID.
+- `note_body` (str): The content of the note.
+- `private` (bool): Whether the note should be private (default `True`).
+
+**Returns**: The API response dictionary for the created note.
+
+**Raises**: `requests.exceptions.RequestException` on API errors.
+
 ---
 
-### `OllamaClient`
+### `OpenAIClient`
 
-Client for interacting with OLLAMA AI models for spam detection.
+Client for interacting with the OpenAI API for spam detection.
 
-**Location**: `ollama_client.py`
+**Location**: `openai_client.py`
 
 #### Constructor
 
 ```python
-OllamaClient()
+OpenAIClient()
 ```
 
-Initializes the client and tests connection to OLLAMA server.
+Initializes the client with OpenAI API key and model from `Config`.
 
 #### Methods
 
-##### `analyze_spam(subject: str, description: str, sender_email: str = "") -> Tuple[bool, float, str]`
+##### `analyze_spam(subject: str, description: str, sender_email: str = "", is_system_validated: bool = False) -> Tuple[bool, float, str]`
 
-Analyzes ticket content for spam using AI.
+Analyzes ticket content for spam using the OpenAI API.
 
 **Parameters**:
-- `subject` (str): Ticket subject
-- `description` (str): Ticket description/content
-- `sender_email` (str): Sender's email address (optional)
+- `subject` (str): Ticket subject.
+- `description` (str): Ticket description/content.
+- `sender_email` (str): Sender's email address (optional).
+- `is_system_validated` (bool): Flag indicating if the ticket contains a system validation phrase.
 
 **Returns**: Tuple containing:
-- `is_spam` (bool): Whether content is classified as spam
-- `confidence` (float): Confidence score (0.0-1.0)
-- `reasoning` (str): AI's explanation for the decision
+- `is_spam` (bool): Whether content is classified as spam by the AI.
+- `confidence` (float): Confidence score (0.0-1.0) from the AI's response.
+- `reasoning` (str): AI's explanation for the decision.
 
-**Raises**: `Exception` on AI processing errors
+**Raises**: `Exception` on AI processing errors or if the API response is not in the expected JSON format.
 
 **Example**:
 ```python
-client = OllamaClient()
+client = OpenAIClient()
 is_spam, confidence, reasoning = client.analyze_spam(
     subject="Help with login",
     description="I can't access my account",
-    sender_email="user@example.com"
+    sender_email="user@example.com",
+    is_system_validated=False
 )
 ```
 
@@ -220,23 +242,24 @@ Main spam filtering service that orchestrates the detection process.
 SpamFilter()
 ```
 
-Initializes the spam filter with Freshdesk and OLLAMA clients.
+Initializes the spam filter with `FreshdeskClient` and `OpenAIClient` instances.
 
 #### Methods
 
 ##### `process_tickets(limit: Optional[int] = None) -> Dict[str, int]`
 
-Processes tickets for spam detection.
+Processes a batch of tickets for spam detection based on configuration (new or all open tickets).
+Intended for local continuous execution.
 
 **Parameters**:
-- `limit` (Optional[int]): Maximum number of tickets to process
+- `limit` (Optional[int]): Maximum number of tickets to process in this batch.
 
 **Returns**: Dictionary with processing statistics:
-- `total_processed` (int): Number of tickets analyzed
-- `spam_detected` (int): Number of spam tickets found
-- `legitimate` (int): Number of legitimate tickets
-- `errors` (int): Number of processing errors
-- `skipped_already_processed` (int): Number of already processed tickets
+- `total_processed` (int): Number of tickets analyzed in this batch.
+- `spam_detected` (int): Number of spam tickets found.
+- `legitimate` (int): Number of legitimate tickets.
+- `errors` (int): Number of processing errors in this batch.
+- `skipped_already_processed` (int): Number of tickets skipped because they were already processed in this run cycle.
 
 **Example**:
 ```python
@@ -245,52 +268,46 @@ stats = spam_filter.process_tickets(limit=10)
 print(f"Processed {stats['total_processed']} tickets")
 ```
 
-##### `analyze_ticket(ticket: Dict) -> Dict`
+##### `process_single_ticket_data(ticket_data: Dict) -> Dict`
 
-Analyzes a single ticket for spam (legacy method).
+Processes a single ticket provided as a dictionary (e.g., from a Lambda event).
 
 **Parameters**:
-- `ticket` (Dict): Ticket dictionary from Freshdesk
+- `ticket_data` (Dict): Dictionary containing the ticket details (ID, subject, description, etc.).
 
-**Returns**: Analysis result dictionary
+**Returns**: Dictionary with analysis result for the single ticket, including `is_spam`, `confidence`, `reasoning`.
+
+##### `analyze_ticket(ticket: Dict) -> Dict`
+
+Analyzes a single ticket for spam. (Note: `analyze_first_customer_message` or direct call to `OpenAIClient` via `handle_spam_ticket` is typically used more directly now).
+
+**Parameters**:
+- `ticket` (Dict): Ticket dictionary from Freshdesk.
+
+**Returns**: Analysis result dictionary.
 
 ##### `analyze_first_customer_message(message_data: Dict) -> Dict`
 
-Analyzes the first customer message for spam.
+Analyzes the first customer message (extracted by `FreshdeskClient`) for spam.
 
 **Parameters**:
-- `message_data` (Dict): First customer message data
+- `message_data` (Dict): Dictionary containing details of the first customer message.
 
-**Returns**: Analysis result dictionary containing:
-- `ticket_id` (int): The ticket ID
-- `is_spam` (bool): Whether message is spam
-- `confidence` (float): Confidence score
-- `reasoning` (str): AI's reasoning
-- `subject` (str): Ticket subject
-- `message_type` (str): Type of message analyzed
+**Returns**: Analysis result dictionary.
 
-##### `handle_spam_ticket(ticket_id: int, analysis_result: Dict) -> None`
+##### `handle_spam_ticket(ticket_id: int, analysis_result: Dict)`
 
-Handles a ticket that has been identified as spam.
+Internal method to handle a ticket identified as spam. It adds tags, notes, and potentially closes the ticket based on confidence scores and configuration. Checks for duplicate notes before adding a new one.
 
 **Parameters**:
-- `ticket_id` (int): The ticket ID
-- `analysis_result` (Dict): The spam analysis result
-
-**Actions Performed**:
-- Adds 'auto-spam-detected' tag
-- For high confidence (≥0.9): Marks ticket as spam and closes it
-- For medium confidence: Adds 'needs-spam-review' tag
+- `ticket_id` (int): The ID of the spam ticket.
+- `analysis_result` (Dict): The result from `analyze_spam` containing confidence and reasoning.
 
 ##### `get_spam_statistics() -> Dict`
 
-Gets statistics about spam detection.
+Fetches overall spam statistics from Freshdesk (e.g., total tickets, spam tagged tickets).
 
-**Returns**: Dictionary with statistics:
-- `total_tickets_checked` (int): Total tickets in system
-- `spam_tagged_tickets` (int): Tickets tagged as spam
-- `auto_detected_spam` (int): Auto-detected spam tickets
-- `processed_this_session` (int): Tickets processed in current session
+**Returns**: Dictionary with spam statistics or an error message.
 
 ## Error Handling
 
