@@ -226,8 +226,6 @@ Key components for Lambda deployment:
 4.  **API Gateway**: Set up an API Gateway endpoint (e.g., POST method) that triggers your Lambda function.
 5.  **Freshdesk Webhook**: Configure a webhook in Freshdesk (e.g., on ticket creation) to send ticket data to your API Gateway endpoint.
 
-Refer to the summary provided earlier in the conversation for more detailed Lambda deployment steps.
-
 ## Testing Procedures
 
 ### Running Tests
