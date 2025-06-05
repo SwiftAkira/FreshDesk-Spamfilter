@@ -5,7 +5,8 @@ import logging
 import time
 from typing import List, Dict, Optional
 from freshdesk_client import FreshdeskClient
-from ollama_client import OllamaClient
+# from ollama_client import OllamaClient # Old client
+from openai_client import OpenAIClient # New OpenAI client
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -16,11 +17,12 @@ class SpamFilter:
     def __init__(self):
         """Initialize the spam filter"""
         self.freshdesk = FreshdeskClient()
-        self.ollama = OllamaClient()
+        # self.ollama = OllamaClient() # Old client instance
+        self.ai_client = OpenAIClient() # New OpenAI client instance
         self.spam_threshold = Config.SPAM_THRESHOLD
         self.processed_tickets = set()  # Track processed tickets to avoid duplicates
         
-        logger.info(f"Spam filter initialized with threshold: {self.spam_threshold}")
+        logger.info(f"Spam filter initialized with AI client: {type(self.ai_client).__name__}, threshold: {self.spam_threshold}")
     
     def process_tickets(self, limit: int = None) -> Dict[str, int]:
         """
@@ -118,18 +120,25 @@ class SpamFilter:
                 import re
                 description = re.sub('<[^<]+?>', '', ticket['description'])
             
+            # Check for system validation phrase
+            system_validated_phrase = "USER INFORMATION WAS VALIDATED BY OUR SYSTEM"
+            is_system_validated = system_validated_phrase.lower() in description.lower()
+            if is_system_validated:
+                logger.info(f"Ticket #{ticket_id} contains system validation phrase in its description. Flagging for AI awareness.")
+
             logger.debug(f"Analyzing ticket #{ticket_id}: '{subject}'")
             
             # Analyze with AI
-            is_spam, confidence, reasoning = self.ollama.analyze_spam(
+            is_spam_ai, confidence, reasoning = self.ai_client.analyze_spam(
                 subject=subject,
                 description=description,
-                sender_email=sender_email
+                sender_email=sender_email,
+                is_system_validated=is_system_validated # Pass the flag
             )
             
             result = {
                 'ticket_id': ticket_id,
-                'is_spam': is_spam and confidence >= self.spam_threshold,
+                'is_spam': is_spam_ai and confidence >= self.spam_threshold,
                 'confidence': confidence,
                 'reasoning': reasoning,
                 'subject': subject
@@ -166,19 +175,26 @@ class SpamFilter:
         description = message_data.get('description', '')
         sender_email = message_data.get('sender_email', '')
 
+        # Check for system validation phrase
+        system_validated_phrase = "USER INFORMATION WAS VALIDATED BY OUR SYSTEM"
+        is_system_validated = system_validated_phrase.lower() in description.lower()
+        if is_system_validated:
+            logger.info(f"Ticket #{ticket_id} contains system validation phrase. Flagging for AI awareness.")
+
         try:
             logger.debug(f"Analyzing FIRST CUSTOMER MESSAGE for ticket #{ticket_id}: '{subject}'")
 
             # Analyze with AI - only the original customer message
-            is_spam, confidence, reasoning = self.ollama.analyze_spam(
+            is_spam_ai, confidence, reasoning = self.ai_client.analyze_spam(
                 subject=subject,
                 description=description,
-                sender_email=str(sender_email)  # Convert to string in case it's an ID
+                sender_email=str(sender_email),  # Convert to string in case it's an ID
+                is_system_validated=is_system_validated # Pass the flag
             )
 
             result = {
                 'ticket_id': ticket_id,
-                'is_spam': is_spam and confidence >= self.spam_threshold,
+                'is_spam': is_spam_ai and confidence >= self.spam_threshold,
                 'confidence': confidence,
                 'reasoning': reasoning,
                 'subject': subject,
@@ -216,32 +232,53 @@ class SpamFilter:
             
             logger.info(f"Handling spam ticket #{ticket_id} (confidence: {confidence:.2f})")
             
-            # Add spam tag
-            self.freshdesk.add_tag_to_ticket(ticket_id, 'auto-spam-detected')
-            
-            # Add a note with the analysis
+            # Check for existing spam notes from this system (OLLAMA or OpenAI)
+            # Use a generic identifier for checking, but specific one for adding new notes
+            generic_spam_alert_identifier = "Automatic Spam Detection Alert" 
+            current_ai_specific_identifier = f"Automatic Spam Detection Alert (OpenAI)"
+
+            try:
+                conversations = self.freshdesk.get_ticket_conversations(ticket_id)
+                for conv in conversations:
+                    note_body_content = conv.get('body_text') or conv.get('body', '')
+                    if conv.get('private') and generic_spam_alert_identifier in note_body_content:
+                        logger.info(f"A spam detection note (potentially from OLLAMA or OpenAI) already exists for ticket #{ticket_id}. Skipping adding a new note.")
+                        if confidence >= Config.AUTO_CLOSE_SPAM_THRESHOLD:
+                            logger.info(f"Ticket #{ticket_id} (spam, confidence {confidence:.2f}) meets auto-close threshold ({Config.AUTO_CLOSE_SPAM_THRESHOLD}). Ensuring it is marked as spam/closed.")
+                            try:
+                                self.freshdesk.mark_as_spam(ticket_id)
+                            except Exception as e_mark_spam:
+                                logger.error(f"Failed to mark ticket #{ticket_id} as spam (when existing note found): {e_mark_spam}")
+                        return # Exit after finding an existing note and attempting action
+            except Exception as e_check_notes: # Catch errors specifically from get_ticket_conversations or its loop
+                logger.warning(f"Could not check for existing notes on ticket #{ticket_id} due to: {e_check_notes}. Proceeding to add note.")
+
+            # Construct the note content using the current AI specific identifier
             note_content = f"""
-            Automatic Spam Detection Alert
-            
-            This ticket has been automatically flagged as potential spam.
-            
+            {current_ai_specific_identifier}
+            Model: {Config.OPENAI_MODEL_NAME}
             Confidence Score: {confidence:.2f}
             Analysis: {reasoning}
             
-            Please review this ticket manually to confirm.
+            This ticket was automatically processed based on the AI analysis.
+            Threshold for action was: {self.spam_threshold}
             """
             
-            # Update ticket with spam status if confidence is very high
-            if confidence >= 0.9:
-                logger.info(f"High confidence spam - marking ticket #{ticket_id} as spam")
+            # Add the analysis as a private note to the ticket
+            try:
+                self.freshdesk.add_note_to_ticket(ticket_id, note_content, private=True)
+            except Exception as e:
+                logger.error(f"Failed to add spam note to ticket #{ticket_id}: {e}")
+
+            # Mark as spam (status update, potentially close) if confidence is high enough
+            if confidence >= Config.AUTO_CLOSE_SPAM_THRESHOLD:
+                logger.info(f"Ticket #{ticket_id} (spam, confidence {confidence:.2f}) meets auto-close threshold ({Config.AUTO_CLOSE_SPAM_THRESHOLD}). Marking as spam/closed.")
                 self.freshdesk.mark_as_spam(ticket_id)
             else:
-                # Just add tag for manual review
-                logger.info(f"Medium confidence spam - tagging ticket #{ticket_id} for review")
-                self.freshdesk.add_tag_to_ticket(ticket_id, 'needs-spam-review')
-            
+                logger.info(f"Ticket #{ticket_id} (spam, confidence {confidence:.2f}) is below auto-close threshold ({Config.AUTO_CLOSE_SPAM_THRESHOLD}). Tagged, but not auto-closed.")
+
         except Exception as e:
-            logger.error(f"Error handling spam ticket {ticket_id}: {e}")
+            logger.error(f"Error in handle_spam_ticket for ticket {ticket_id}: {e}")
     
     def get_spam_statistics(self) -> Dict:
         """Get statistics about spam detection"""
@@ -269,3 +306,83 @@ class SpamFilter:
         except Exception as e:
             logger.error(f"Error getting spam statistics: {e}")
             return {'error': str(e)}
+
+    def process_single_ticket_data(self, ticket_data: Dict) -> Dict:
+        """
+        Process a single ticket's data, typically from a webhook event.
+
+        Args:
+            ticket_data: Dictionary containing the ticket details from Freshdesk.
+
+        Returns:
+            Dictionary with processing result for this single ticket.
+        """
+        ticket_id = ticket_data.get('id')
+        subject = ticket_data.get('subject', '')
+        # Prefer plain text description if available from webhook
+        description = ticket_data.get('description_text') 
+        if not description:
+            html_description = ticket_data.get('description', '')
+            if html_description:
+                import re
+                description = re.sub('<[^<]+?>', '', html_description) # Strip HTML
+            else:
+                description = "" # Ensure description is a string
+        
+        # Attempt to get a sender identifier. Webhooks might provide 'email' or 'requester_id'
+        # This might need adjustment based on actual webhook payload structure from Freshdesk for "Ticket Created"
+        sender_email = ticket_data.get('email') # Often present for new tickets directly
+        if not sender_email:
+            requester_id = ticket_data.get('requester_id')
+            sender_email = str(requester_id) if requester_id else ""
+
+        if not ticket_id:
+            logger.error("process_single_ticket_data: Ticket ID missing in provided data.")
+            return {'error': 'Ticket ID missing', 'ticket_id': None, 'is_spam': False}
+
+        logger.info(f"Processing single ticket event for ticket ID: {ticket_id}")
+
+        # Check for system validation phrase
+        system_validated_phrase = "USER INFORMATION WAS VALIDATED BY OUR SYSTEM"
+        is_system_validated = system_validated_phrase.lower() in description.lower()
+        if is_system_validated:
+            logger.info(f"Ticket #{ticket_id} (from event) contains system validation phrase. Flagging for AI awareness.")
+
+        try:
+            is_spam_ai, confidence, reasoning = self.ai_client.analyze_spam(
+                subject=subject,
+                description=description,
+                sender_email=sender_email,
+                is_system_validated=is_system_validated
+            )
+
+            analysis_result = {
+                'ticket_id': ticket_id,
+                'subject': subject,
+                'is_spam': is_spam_ai and confidence >= self.spam_threshold,
+                'confidence': confidence,
+                'reasoning': reasoning,
+                'action_taken': 'none'
+            }
+
+            if analysis_result['is_spam']:
+                logger.info(f"SPAM DETECTED (from event) - Ticket #{ticket_id}: {reasoning}")
+                self.handle_spam_ticket(ticket_id, analysis_result) # analysis_result is passed here
+                analysis_result['action_taken'] = 'handled_as_spam' # Update action taken
+            else:
+                logger.info(f"Legitimate ticket (from event) - Ticket #{ticket_id}. Confidence: {confidence:.2f}, Reasoning: {reasoning}")
+                analysis_result['action_taken'] = 'marked_as_legitimate'
+
+            self.processed_tickets.add(ticket_id) # Still useful to track if Lambda retries or processes same event
+            return analysis_result
+
+        except Exception as e:
+            logger.error(f"Error processing single ticket data for ticket {ticket_id}: {e}", exc_info=True)
+            return {
+                'ticket_id': ticket_id,
+                'is_spam': False,
+                'confidence': 0.0,
+                'reasoning': f"Analysis failed: {str(e)}",
+                'error': str(e),
+                'action_taken': 'error_in_processing'
+            }

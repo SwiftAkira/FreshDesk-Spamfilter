@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Freshdesk Spam Filter with OLLAMA AI Integration
+Freshdesk Spam Filter with OpenAI AI Integration
 
-This application monitors Freshdesk tickets and uses a local OLLAMA AI model
+This application monitors Freshdesk tickets and uses a local OpenAI model
 to automatically detect and handle spam tickets.
 """
 
@@ -48,33 +48,39 @@ def print_banner():
     banner = f"""
 {Fore.CYAN}╔══════════════════════════════════════════════════════════════╗
 ║                    FRESHDESK SPAM FILTER                     ║
-║                   with OLLAMA AI Integration                 ║
+║                   with OpenAI AI Integration                 ║
 ╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
 
 {Fore.GREEN}Configuration:{Style.RESET_ALL}
   • Freshdesk Domain: {Config.FRESHDESK_DOMAIN}
-  • OLLAMA Host: {Config.OLLAMA_HOST}
-  • OLLAMA Model: {Config.OLLAMA_MODEL}
+  • AI Model: OpenAI ({Config.OPENAI_MODEL_NAME})
   • Spam Threshold: {Config.SPAM_THRESHOLD}
-  • Check Interval: {Config.CHECK_INTERVAL_MINUTES} minutes
-  • Max Tickets/Batch: {Config.MAX_TICKETS_PER_BATCH}
+  • Auto-Close Threshold: {Config.AUTO_CLOSE_SPAM_THRESHOLD}
+  • Check Interval: {Config.CHECK_INTERVAL_MINUTES} minutes (for continuous mode)
+  • Max Tickets/Batch: {Config.MAX_TICKETS_PER_BATCH} (for continuous mode)
   • Process New Tickets Only: {Config.PROCESS_NEW_TICKETS_ONLY}
+  • Dry Run Mode (via --test): {Config.DRY_RUN_MODE}
+  • Running in Lambda: {Config.IS_LAMBDA_ENVIRONMENT}
 
 {Fore.YELLOW}Starting spam detection service...{Style.RESET_ALL}
 """
     print(banner)
 
-def run_spam_detection():
+def run_spam_detection(max_tickets: int = None):
     """Run a single spam detection cycle"""
     try:
         logger = logging.getLogger(__name__)
-        logger.info("Starting spam detection cycle...")
+        if Config.DRY_RUN_MODE:
+            logger.info("DRY RUN MODE: Starting spam detection cycle. No changes will be made.")
+        else:
+            logger.info("Starting spam detection cycle...")
         
         # Initialize spam filter
         spam_filter = SpamFilter()
         
         # Process tickets
-        stats = spam_filter.process_tickets()
+        # Use max_tickets if provided, otherwise it defaults to Config.MAX_TICKETS_PER_BATCH in spam_filter.process_tickets
+        stats = spam_filter.process_tickets(limit=max_tickets)
         
         # Print results
         print(f"\n{Fore.GREEN}Spam Detection Results (NEW tickets only):{Style.RESET_ALL}")
@@ -104,8 +110,8 @@ def run_spam_detection():
 
 def run_once():
     """Run spam detection once and exit"""
-    print(f"{Fore.YELLOW}Running spam detection once...{Style.RESET_ALL}")
-    run_spam_detection()
+    print(f"{Fore.YELLOW}Running spam detection once for a single ticket...{Style.RESET_ALL}")
+    run_spam_detection(max_tickets=1)
     print(f"\n{Fore.GREEN}✅ Single run completed.{Style.RESET_ALL}")
 
 def run_continuous():
@@ -167,11 +173,18 @@ def main():
                 show_help()
                 return
             elif '--once' in sys.argv:
-                # Validate configuration
+                # Check for --test in conjunction with --once
+                if '--test' in sys.argv:
+                    Config.DRY_RUN_MODE = True
+                    print(f"{Fore.MAGENTA}INFO: Running in DRY RUN (--test) mode. No changes will be made to Freshdesk.{Style.RESET_ALL}")
                 Config.validate()
                 print_banner()
                 run_once()
                 return
+            elif '--test' in sys.argv: # Handle --test for continuous mode
+                Config.DRY_RUN_MODE = True
+                print(f"{Fore.MAGENTA}INFO: Running in DRY RUN (--test) mode. No changes will be made to Freshdesk.{Style.RESET_ALL}")
+                # Proceed to validation and continuous run
         
         # Validate configuration
         Config.validate()

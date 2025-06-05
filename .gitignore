@@ -9,7 +9,6 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
 eggs/
@@ -20,7 +19,6 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -28,6 +26,7 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
+#  Usually these files are written by a script, but they do not need to be.
 *.manifest
 *.spec
 
@@ -40,65 +39,93 @@ htmlcov/
 .tox/
 .nox/
 .coverage
-.coverage.*
+.coverage.*_filter
 .cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
+pytest_cache/
 .pytest_cache/
 
 # Translations
 *.mo
 *.pot
 
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+# According to Python Pipenv documentations, all Pipfile.lock files should be committed to Git, # even if it is a library.
+# Pipfile.lock
+
+# PEP 582; __pypackages__ directory
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath stuff
+.sage.py
+
 # Environments
 .env
-.env.local
-.env.production
-.env.staging
-.env.dev
 .venv
-env/
 venv/
+env/
 ENV/
-env.bak/
-venv.bak/
 
-# Logs
-*.log
-spam_filter.log
-ollama.log
+# Spyder project settings
+.spyderproject
+.spyproject
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Rope project settings
+.ropeproject
 
-# OS files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
+# mkdocs documentation
+/site
 
 # mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
 
-# Project-specific sensitive files
-config.local.py
-api_keys.txt
-credentials.json
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# VSCode settings folder
+.vscode/
+
+# Project-specific exclusions
+spam_filter.log
+*.log
+*.DS_Store

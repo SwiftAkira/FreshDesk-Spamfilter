@@ -18,8 +18,13 @@ class Config:
     OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
     OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3.2')
     
+    # OpenAI Configuration
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    OPENAI_MODEL_NAME = os.getenv('OPENAI_MODEL_NAME', 'gpt-3.5-turbo') # Default to gpt-3.5-turbo
+    
     # Spam Filter Configuration
     SPAM_THRESHOLD = float(os.getenv('SPAM_THRESHOLD', '0.7'))
+    AUTO_CLOSE_SPAM_THRESHOLD = float(os.getenv('AUTO_CLOSE_SPAM_THRESHOLD', '0.75'))
     CHECK_INTERVAL_MINUTES = int(os.getenv('CHECK_INTERVAL_MINUTES', '5'))
     MAX_TICKETS_PER_BATCH = int(os.getenv('MAX_TICKETS_PER_BATCH', '50'))
     PROCESS_NEW_TICKETS_ONLY = os.getenv('PROCESS_NEW_TICKETS_ONLY', 'true').lower() == 'true'
@@ -27,12 +32,17 @@ class Config:
     # Logging Configuration
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
     
+    # Application Mode
+    DRY_RUN_MODE = False # Default to False, will be set by main.py if --test is used
+    IS_LAMBDA_ENVIRONMENT = os.getenv('AWS_LAMBDA_FUNCTION_NAME') is not None
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present"""
         required_fields = [
             ('FRESHDESK_DOMAIN', cls.FRESHDESK_DOMAIN),
             ('FRESHDESK_API_KEY', cls.FRESHDESK_API_KEY),
+            ('OPENAI_API_KEY', cls.OPENAI_API_KEY)
         ]
         
         missing_fields = []
