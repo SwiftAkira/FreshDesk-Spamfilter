@@ -4,6 +4,7 @@ OpenAI API Client for spam detection
 import os
 import json
 import logging
+from typing import Tuple, List, Dict # Added Tuple, List, Dict for type hinting
 from openai import OpenAI # Corrected import for OpenAI v1.x+
 from .config import Config
 
@@ -22,7 +23,7 @@ class OpenAIClient:
         self.model = Config.OPENAI_MODEL_NAME
         logger.info(f"OpenAIClient initialized with model: {self.model}")
 
-    def _create_spam_analysis_prompt_messages(self, subject: str, description: str, sender_email: str, is_system_validated: bool) -> list:
+    def _create_spam_analysis_prompt_messages(self, subject: str, description: str, sender_email: str, is_system_validated: bool) -> List[Dict[str, str]]:
         """Create a list of messages for the OpenAI Chat Completions prompt."""
         
         system_validation_guidance = ""
