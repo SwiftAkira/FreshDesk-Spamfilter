@@ -1,21 +1,21 @@
-# Freshdesk Spam Filter with OLLAMA AI Integration
+# Freshdesk Spam Filter with OpenAI Integration
 
-An intelligent spam filtering system for Freshdesk that uses local AI models via OLLAMA to automatically detect and handle spam tickets.
+An intelligent spam filtering system for Freshdesk that uses the OpenAI API to automatically detect and handle spam tickets.
 
 ## Features
 
-- 🤖 **AI-Powered Detection**: Uses OLLAMA local AI models for intelligent spam analysis
+- 🤖 **AI-Powered Detection**: Uses OpenAI API for intelligent spam analysis
 - 🔄 **Automatic Processing**: Continuously monitors and processes new tickets
 - 🏷️ **Smart Tagging**: Automatically tags spam tickets for easy identification
 - ⚙️ **Configurable Thresholds**: Adjustable confidence levels for spam detection
 - 📊 **Detailed Logging**: Comprehensive logging and statistics
-- 🔒 **Secure**: Uses local AI models - no data sent to external services
+- 🔒 **Secure**: API keys managed via .env file. Ticket data is sent to the OpenAI API for analysis.
 - 🎯 **Conservative Approach**: Designed to minimize false positives
 
 ## Prerequisites
 
 1. **Freshdesk Account** with API access
-2. **OLLAMA** installed and running locally
+2. **OpenAI API Key**
 3. **Python 3.8+**
 
 ## Installation
@@ -27,18 +27,7 @@ An intelligent spam filtering system for Freshdesk that uses local AI models via
    pip install -r requirements.txt
    ```
 
-3. **Install and setup OLLAMA:**
-   ```bash
-   # Install OLLAMA (visit https://ollama.ai for installation instructions)
-   
-   # Pull a suitable model (e.g., llama3.2)
-   ollama pull llama3.2
-   
-   # Start OLLAMA server
-   ollama serve
-   ```
-
-4. **Configure the application:**
+3. **Configure the application:**
    ```bash
    # Copy the example environment file
    cp .env.example .env
@@ -53,17 +42,20 @@ Edit the `.env` file with your settings:
 
 ```env
 # Freshdesk Configuration
-FRESHDESK_DOMAIN=your-domain.freshdesk.com
-FRESHDESK_API_KEY=your_api_key_here
+FRESHDESK_DOMAIN=your-subdomain # e.g., yourcompany if your URL is yourcompany.freshdesk.com
+FRESHDESK_API_KEY=your_freshdesk_api_key_here
 
-# OLLAMA Configuration
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=llama3.2
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL_NAME=gpt-3.5-turbo # Or your preferred model
 
 # Spam Filter Configuration
 SPAM_THRESHOLD=0.7
+AUTO_CLOSE_SPAM_THRESHOLD=0.75
 CHECK_INTERVAL_MINUTES=5
 MAX_TICKETS_PER_BATCH=50
+PROCESS_NEW_TICKETS_ONLY=true
+AGENT_ID_TO_ASSIGN_SPAM=your_agent_id_for_spam # If applicable
 
 # Logging
 LOG_LEVEL=INFO
@@ -71,13 +63,17 @@ LOG_LEVEL=INFO
 
 ### Configuration Options
 
-- **FRESHDESK_DOMAIN**: Your Freshdesk domain (e.g., `company.freshdesk.com`)
+- **FRESHDESK_DOMAIN**: Your Freshdesk subdomain (e.g., `yourcompany` if URL is `yourcompany.freshdesk.com`)
 - **FRESHDESK_API_KEY**: Your Freshdesk API key (found in Profile Settings)
-- **OLLAMA_HOST**: OLLAMA server URL (default: `http://localhost:11434`)
-- **OLLAMA_MODEL**: AI model to use (e.g., `llama3.2`, `mistral`, `codellama`)
-- **SPAM_THRESHOLD**: Confidence threshold for spam detection (0.0-1.0)
-- **CHECK_INTERVAL_MINUTES**: How often to check for new tickets
-- **MAX_TICKETS_PER_BATCH**: Maximum tickets to process in one batch
+- **OPENAI_API_KEY**: Your OpenAI API key.
+- **OPENAI_MODEL_NAME**: The OpenAI model to use (e.g., `gpt-3.5-turbo`, `gpt-4`, `gpt-4.1-nano`).
+- **SPAM_THRESHOLD**: Confidence threshold for initial spam detection (0.0-1.0).
+- **AUTO_CLOSE_SPAM_THRESHOLD**: Confidence threshold to automatically close a ticket as spam (0.0-1.0).
+- **CHECK_INTERVAL_MINUTES**: How often to check for new tickets (in continuous mode).
+- **MAX_TICKETS_PER_BATCH**: Maximum tickets to process in one batch (in continuous mode).
+- **PROCESS_NEW_TICKETS_ONLY**: Set to `true` to only process new tickets, `false` to process all open tickets.
+- **AGENT_ID_TO_ASSIGN_SPAM**: (Optional) The numerical ID of the agent to assign spam tickets to before closing.
+- **LOG_LEVEL**: Logging level (e.g., `INFO`, `DEBUG`).
 
 ## Getting Your Freshdesk API Key
 
@@ -86,19 +82,32 @@ LOG_LEVEL=INFO
 3. Go to "Profile Settings"
 4. Your API key is shown in the right sidebar under "Your API Key"
 
+## Getting Your OpenAI API Key
+
+1. Go to [https://platform.openai.com/](https://platform.openai.com/)
+2. Sign up or log in.
+3. Navigate to the API keys section in your account settings to create and copy your API key.
+
 ## Usage
 
-### Run Continuously (Recommended)
+### Run Continuously (Recommended for local execution)
 ```bash
 python main.py
 ```
-This will monitor Freshdesk continuously and process new tickets automatically.
+This will monitor Freshdesk continuously and process new tickets automatically based on `CHECK_INTERVAL_MINUTES`.
 
-### Run Once
+### Run Once (for a single ticket test)
 ```bash
 python main.py --once
 ```
-This will process current tickets once and exit.
+This will process one current ticket and exit.
+
+### Run in Test Mode (Dry Run)
+```bash
+python main.py --test
+```
+This runs the continuous cycle but does not make any actual changes to Freshdesk (e.g., no tagging, no closing, no notes added). It logs what it *would* do.
+Combine with `--once` for a single dry run: `python main.py --once --test`
 
 ### Show Help
 ```bash
@@ -107,55 +116,57 @@ python main.py --help
 
 ## How It Works
 
-1. **New Ticket Monitoring**: The system fetches ONLY newly opened tickets (status 2) from Freshdesk
-2. **First Message Extraction**: Extracts only the first customer message, ignoring agent responses and private notes
-3. **AI Analysis**: The original customer message is analyzed by the local OLLAMA AI model
-4. **Spam Detection**: The AI provides a confidence score and reasoning for spam classification
+1. **New Ticket Monitoring**: The system fetches new tickets from Freshdesk (or all open tickets, depending on configuration).
+2. **First Message Extraction**: Extracts the first customer message from the ticket details.
+3. **AI Analysis**: The ticket subject, description, and sender email are sent to the OpenAI API for analysis against a spam detection prompt.
+4. **Spam Detection**: The OpenAI API provides a confidence score and reasoning for spam classification.
 5. **Automatic Actions**: Based on confidence levels:
-   - **High confidence (≥90%)**: Ticket is marked as spam and closed
-   - **Medium confidence (≥threshold)**: Ticket is tagged for manual review
-   - **Low confidence**: No action taken
+   - **High confidence (≥ `AUTO_CLOSE_SPAM_THRESHOLD`)**: Ticket is assigned to a designated agent (if `AGENT_ID_TO_ASSIGN_SPAM` is set), tagged `Auto-Spam-Detected`, a private note with AI analysis is added, and the ticket is closed.
+   - **Medium confidence (≥ `SPAM_THRESHOLD` but < `AUTO_CLOSE_SPAM_THRESHOLD`)**: Ticket is tagged `Auto-Spam-Detected` and a private note is added. It is not automatically closed, allowing for manual review.
+   - **Low confidence**: No action taken.
 
 ### What Gets Analyzed
 
 ✅ **Processed:**
-- New tickets only (status 2 = Open)
-- First customer message content
-- Original ticket subject and description
+- New tickets (status 2 = Open by default, or all open if configured).
+- First customer message content (if available, otherwise ticket description).
+- Original ticket subject.
+- Sender email (if available).
 
-❌ **Ignored:**
-- Agent responses and replies
-- Private notes between agents
-- Already processed tickets
-- Tickets in pending/resolved status
+❌ **Ignored (by default for new tickets):**
+- Agent responses and replies within existing conversations.
+- Private notes between agents (unless part of the initial description).
+- Already processed tickets within the same run cycle.
+- Tickets in pending/resolved/closed status (unless `PROCESS_NEW_TICKETS_ONLY` is `false`).
 
-## Spam Detection Criteria
+## Spam Detection Criteria (Inferred by AI)
 
-The AI model analyzes tickets based on:
+The OpenAI model analyzes tickets based on a prompt that guides it to look for common spam characteristics, such as:
 
-- Promotional/marketing content
-- Suspicious links or attachments
-- Generic/template-like language
-- Irrelevant content for support
-- Suspicious sender patterns
-- Phishing attempts
-- Malicious content
+- Promotional/marketing content without clear user opt-in.
+- Suspicious links or attachments.
+- Generic/template-like language inconsistent with genuine support requests.
+- Irrelevant content for the typical support queries of the helpdesk.
+- Unusual sender patterns or email addresses.
+- Phishing attempts or requests for sensitive information.
+- Indicators of malicious content.
 
 ## Output Example
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
 ║                    FRESHDESK SPAM FILTER                     ║
-║                   with OLLAMA AI Integration                 ║
+║                   with OpenAI Integration                    ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Configuration:
-  • Freshdesk Domain: company.freshdesk.com
-  • OLLAMA Host: http://localhost:11434
-  • OLLAMA Model: llama3.2
+  • Freshdesk Domain: your-subdomain.freshdesk.com
+  • OpenAI Model: gpt-3.5-turbo
   • Spam Threshold: 0.7
+  • Auto-Close Threshold: 0.75
   • Check Interval: 5 minutes
   • Max Tickets/Batch: 50
+  • Process New Tickets Only: true
 
 Spam Detection Results:
   • Total Processed: 15
@@ -170,8 +181,8 @@ Spam Detection Results:
 
 The application creates detailed logs in `spam_filter.log` including:
 - Ticket processing details
-- Spam detection results
-- API interactions
+- Spam detection results from OpenAI (including reasoning)
+- API interactions with Freshdesk and OpenAI
 - Error messages
 
 ## Troubleshooting
@@ -179,114 +190,61 @@ The application creates detailed logs in `spam_filter.log` including:
 ### Common Issues
 
 1. **"Missing required configuration"**
-   - Ensure all required fields in `.env` are set
-   - Check that your Freshdesk domain and API key are correct
+   - Ensure all required fields in `.env` are set (e.g., `FRESHDESK_DOMAIN`, `FRESHDESK_API_KEY`, `OPENAI_API_KEY`).
+   - Check that your Freshdesk domain (subdomain part only) and API keys are correct.
 
-2. **"Failed to connect to OLLAMA"**
-   - Ensure OLLAMA is running: `ollama serve`
-   - Check that the specified model is available: `ollama list`
-   - Pull the model if needed: `ollama pull llama3.2`
+2. **"Error fetching tickets from Freshdesk" or OpenAI API errors**
+   - Verify your Freshdesk domain and API key / OpenAI API key.
+   - Check your internet connection.
+   - Ensure your Freshdesk account has API access and your OpenAI account has sufficient credits/quota.
 
-3. **"Error fetching tickets from Freshdesk"**
-   - Verify your Freshdesk domain and API key
-   - Check your internet connection
-   - Ensure your Freshdesk account has API access
-
-4. **High false positive rate**
-   - Increase the `SPAM_THRESHOLD` value
-   - Try a different OLLAMA model
-   - Review the AI's reasoning in the logs
+3. **High false positive rate or poor detection**
+   - Adjust the `SPAM_THRESHOLD` or `AUTO_CLOSE_SPAM_THRESHOLD` values in `.env`.
+   - Consider trying a different OpenAI model specified in `OPENAI_MODEL_NAME`.
+   - Review the AI's reasoning in the logs to understand its decisions.
+   - The prompt sent to OpenAI (in `openai_client.py`) can be tuned for better performance if needed.
 
 ## Security Considerations
 
-- API keys are stored locally in `.env` file
-- All AI processing happens locally via OLLAMA
-- No ticket data is sent to external services
-- Use appropriate file permissions for `.env` file
+- API keys are stored locally in the `.env` file. Ensure this file is secured and **not committed to version control** (it should be in your `.gitignore`).
+- Ticket data (subject, description, sender email) is sent to the OpenAI API for analysis. Review OpenAI's data usage and privacy policies.
 
-## AI Model Selection & Performance
+## Lambda Deployment
 
-### Recommended Models
+This application is designed to be deployable to AWS Lambda for event-driven, real-time spam filtering.
 
-The system has been tested with various OLLAMA models. Here are our recommendations:
+Key components for Lambda deployment:
+- `lambda_function.py`: Contains the `lambda_handler` for AWS Lambda.
+- `spam_filter.py` includes `process_single_ticket_data` for handling individual ticket events.
+- Configuration is loaded from Lambda environment variables.
 
-| Model | Size | Speed | Accuracy | Memory Usage | Best For |
-|-------|------|-------|----------|--------------|----------|
-| `llama3.2` | 2GB | Fast | Good | Low | Production use, balanced performance |
-| `llama3.2:8b` | 4.7GB | Medium | Excellent | Medium | High accuracy requirements |
-| `mistral` | 4.1GB | Fast | Very Good | Medium | Speed-focused deployments |
-| `phi3` | 2.3GB | Very Fast | Good | Low | Resource-constrained environments |
+**High-Level Lambda Deployment Steps:**
 
-### Performance Characteristics
+1.  **Package Application**: Create a ZIP file containing your code and dependencies (installed via `pip install -r requirements.txt -t ./package`).
+2.  **IAM Role**: Create an IAM role for Lambda with permissions for `AWSLambdaBasicExecutionRole`.
+3.  **Lambda Function**: Create the Lambda function in AWS, upload the ZIP, set the handler to `lambda_function.lambda_handler`, and configure environment variables (for API keys, thresholds, etc.).
+4.  **API Gateway**: Set up an API Gateway endpoint (e.g., POST method) that triggers your Lambda function.
+5.  **Freshdesk Webhook**: Configure a webhook in Freshdesk (e.g., on ticket creation) to send ticket data to your API Gateway endpoint.
 
-- **Processing Speed**: 10-50 tickets per minute (model dependent)
-- **Memory Requirements**: 1-8GB RAM (model dependent)
-- **Accuracy**: 85-95% spam detection rate with <2% false positives
-- **Response Time**: 1-5 seconds per ticket analysis
-
-### Model Selection Rationale
-
-**For Production**: Use `llama3.2` for the best balance of speed, accuracy, and resource usage.
-
-**For High Accuracy**: Use `llama3.2:8b` when false negatives are more costly than processing time.
-
-**For Resource Constraints**: Use `phi3` when running on limited hardware.
+Refer to the summary provided earlier in the conversation for more detailed Lambda deployment steps.
 
 ## Testing Procedures
 
 ### Running Tests
 
-The project includes comprehensive test suites to validate functionality:
+The project includes test suites to validate functionality:
 
 ```bash
-# Run all integration tests
+# Ensure you have test-specific dependencies if any (e.g., pytest, mock)
+# Activate your virtual environment: source venv/bin/activate
+
 python test_ai_spam_detection.py    # Test AI spam detection with realistic examples
 python test_edge_cases.py           # Test edge cases and ambiguous content
-python test_ai_independence.py      # Verify AI makes content-based decisions
+python test_ai_independence.py      # Verify AI makes content-based decisions (may need OLLAMA for older tests)
 python test_new_tickets_only.py     # Verify only new tickets are processed
-
-# Run setup validation
 python test_setup.py                # Validate configuration and connectivity
 ```
-
-### Test Case Categories
-
-1. **Realistic Spam Examples**:
-   - Mobile app development solicitations
-   - Generic marketing emails
-   - Phishing attempts
-   - Promotional content
-
-2. **Legitimate Support Requests**:
-   - Order delivery complaints
-   - Technical support issues
-   - Account access problems
-   - Product inquiries
-
-3. **Edge Cases**:
-   - Ambiguous content
-   - Mixed language tickets
-   - Very short messages
-   - Technical jargon
-
-4. **AI Independence Tests**:
-   - Validates AI makes genuine content-based decisions
-   - Ensures no pattern matching against test labels
-   - Confirms reasoning quality
-
-### Offline Testing Mode
-
-For development and testing without external dependencies:
-
-```bash
-# Set environment variables for offline mode
-export FRESHDESK_DOMAIN=test.example.com
-export FRESHDESK_API_KEY=test_key
-export OLLAMA_HOST=http://localhost:11434
-
-# Run tests with mock data
-python test_ai_spam_detection.py --offline
-```
+Note: Some older tests like `test_ai_independence.py` might have been written with OLLAMA in mind and may need updates or to be run with a compatible local setup if OLLAMA was a core part of their original design.
 
 ## Developer Setup
 
