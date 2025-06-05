@@ -12,6 +12,10 @@ from unittest.mock import Mock, patch
 # Initialize colorama
 init()
 
+# Assuming src is in PYTHONPATH or tests are run from project root
+from src.spam_filter import SpamFilter
+from src.openai_client import OpenAIClient
+
 def test_new_ticket_filtering():
     """Test that only new tickets are processed"""
     print(f"{Fore.CYAN}Testing New Ticket Filtering...{Style.RESET_ALL}")
@@ -146,26 +150,26 @@ def test_spam_filter_integration():
     print(f"\n{Fore.CYAN}Testing Spam Filter Integration...{Style.RESET_ALL}")
     
     try:
-        from spam_filter import SpamFilter
-        from ollama_client import OllamaClient
+        # OpenAIClient is imported at the top of the file now.
+        # SpamFilter is imported at the top of the file now.
         
-        # Mock the OLLAMA client to avoid actual AI calls
-        with patch.object(OllamaClient, 'analyze_spam') as mock_analyze:
-            # Mock AI response
+        # Mock the OpenAI client to avoid actual AI calls
+        with patch.object(OpenAIClient, 'analyze_spam') as mock_analyze:
+            # Mock AI response (is_spam, confidence, reasoning)
             mock_analyze.return_value = (False, 0.3, "This appears to be a legitimate support request")
             
-            # Mock the Freshdesk methods
-            with patch('spam_filter.FreshdeskClient') as mock_freshdesk_class:
-                mock_freshdesk = Mock()
-                mock_freshdesk_class.return_value = mock_freshdesk
+            # Mock the FreshdeskClient as it's used by SpamFilter
+            with patch('src.spam_filter.FreshdeskClient') as mock_freshdesk_class:
+                mock_freshdesk_instance = Mock()
+                mock_freshdesk_class.return_value = mock_freshdesk_instance
                 
-                # Mock new tickets
-                mock_freshdesk.get_tickets.return_value = [
+                # Mock new tickets returned by FreshdeskClient
+                mock_freshdesk_instance.get_tickets.return_value = [
                     {'id': 100, 'status': 2, 'subject': 'Test ticket', 'created_at': '2024-01-01T10:00:00Z'}
                 ]
                 
-                # Mock first customer message
-                mock_freshdesk.get_first_customer_message.return_value = {
+                # Mock first customer message returned by FreshdeskClient
+                mock_freshdesk_instance.get_first_customer_message.return_value = {
                     'ticket_id': 100,
                     'subject': 'Test ticket',
                     'description': 'I need help with my account login',
@@ -174,8 +178,13 @@ def test_spam_filter_integration():
                     'conversation_id': 1
                 }
                 
-                # Create spam filter and process
-                spam_filter = SpamFilter()
+                # Create spam filter (which will use the mocked FreshdeskClient and OpenAIClient)
+                spam_filter = SpamFilter() # SpamFilter will instantiate its own AI client, which will be the real OpenAIClient
+                                          # but its analyze_spam method is mocked globally if SpamFilter calls it directly
+                                          # If SpamFilter instantiates its own OpenAIClient, we need to ensure that instance is mocked, 
+                                          # or that the global patch hits it.
+                                          # The patch on OpenAIClient.analyze_spam should catch calls from any instance.
+
                 stats = spam_filter.process_tickets(limit=5)
                 
                 print(f"  • Tickets processed: {stats['total_processed']}")
@@ -186,8 +195,8 @@ def test_spam_filter_integration():
                 # Verify the process worked
                 if (stats['total_processed'] > 0 and 
                     stats['errors'] == 0 and
-                    mock_freshdesk.get_tickets.called and
-                    mock_freshdesk.get_first_customer_message.called):
+                    mock_freshdesk_instance.get_tickets.called and
+                    mock_freshdesk_instance.get_first_customer_message.called):
                     print(f"  {Fore.GREEN}✅ Spam filter integration working correctly{Style.RESET_ALL}")
                     return True
                 else:

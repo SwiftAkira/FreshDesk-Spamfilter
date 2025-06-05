@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
 Standalone AI Spam Detection Test
-Tests the OLLAMA AI spam detection without requiring Freshdesk connection
+Tests the OpenAI AI spam detection without requiring Freshdesk connection.
+Ensure your .env file is configured with OPENAI_API_KEY and OPENAI_MODEL_NAME.
 """
 
 import sys
 import logging
 from colorama import init, Fore, Style
-from ollama_client import OllamaClient
+from src.openai_client import OpenAIClient
+from src.config import Config
 
 # Initialize colorama
 init()
+
+# Configure basic logging for the test script
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Test cases with various types of messages - based on real examples
 TEST_CASES = [
@@ -221,25 +227,9 @@ OurCompany Inc.""",
     }
 ]
 
-def test_ollama_connection():
-    """Test OLLAMA connection"""
-    print(f"{Fore.CYAN}Testing OLLAMA Connection...{Style.RESET_ALL}")
-    
-    try:
-        client = OllamaClient()
-        print(f"{Fore.GREEN}✅ Successfully connected to OLLAMA{Style.RESET_ALL}")
-        print(f"  • Host: {client.host}")
-        print(f"  • Model: {client.model}")
-        return client
-        
-    except Exception as e:
-        print(f"{Fore.RED}❌ OLLAMA connection failed: {e}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}Please ensure OLLAMA is running: ollama serve{Style.RESET_ALL}")
-        return None
-
-def run_spam_detection_tests(client):
+def run_spam_detection_tests(client: OpenAIClient):
     """Run spam detection tests on various message types"""
-    print(f"\n{Fore.CYAN}Running AI Spam Detection Tests...{Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Running AI Spam Detection Tests using OpenAI ({client.model_name})...{Style.RESET_ALL}")
     print("=" * 80)
     
     results = []
@@ -252,115 +242,96 @@ def run_spam_detection_tests(client):
         print(f"Expected: {test_case['expected']}")
         
         try:
-            # Analyze with AI
-            is_spam, confidence, reasoning = client.analyze_spam(
+            is_spam_ai, confidence, reasoning = client.analyze_spam(
                 subject=test_case['subject'],
                 description=test_case['description'],
-                sender_email=test_case['sender']
+                sender_email=test_case['sender'],
+                is_system_validated=False
             )
             
-            # Determine result
-            ai_result = "SPAM" if is_spam else "NOT SPAM"
-            is_correct = ai_result == test_case['expected']
+            prediction = "SPAM" if is_spam_ai else "NOT SPAM"
             
-            if is_correct:
-                correct_predictions += 1
-                status_color = Fore.GREEN
-                status_icon = "✅"
-            else:
-                status_color = Fore.RED
-                status_icon = "❌"
-            
-            print(f"AI Result: {status_color}{ai_result}{Style.RESET_ALL} (confidence: {confidence:.2f})")
-            print(f"Status: {status_color}{status_icon} {'CORRECT' if is_correct else 'INCORRECT'}{Style.RESET_ALL}")
+            print(f"AI Prediction: {Fore.GREEN if prediction == test_case['expected'] else Fore.RED}{prediction}{Style.RESET_ALL}")
+            print(f"Confidence: {confidence:.2f}")
             print(f"Reasoning: {reasoning}")
             
+            test_result = {
+                "name": test_case['name'],
+                "expected": test_case['expected'],
+                "prediction": prediction,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "correct": prediction == test_case['expected']
+            }
+            results.append(test_result)
+            
+            if test_result["correct"]:
+                correct_predictions += 1
+                
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error during AI analysis: {e}{Style.RESET_ALL}")
             results.append({
-                'test_name': test_case['name'],
-                'expected': test_case['expected'],
-                'ai_result': ai_result,
-                'confidence': confidence,
-                'correct': is_correct,
-                'reasoning': reasoning
+                "name": test_case['name'],
+                "expected": test_case['expected'],
+                "prediction": "ERROR",
+                "correct": False,
+                "error": str(e)
             })
             
-        except Exception as e:
-            print(f"{Fore.RED}❌ Error analyzing test case: {e}{Style.RESET_ALL}")
-            results.append({
-                'test_name': test_case['name'],
-                'expected': test_case['expected'],
-                'ai_result': 'ERROR',
-                'confidence': 0.0,
-                'correct': False,
-                'reasoning': f"Error: {str(e)}"
-            })
-        
-        print("-" * 80)
-    
     return results, correct_predictions
 
 def print_summary(results, correct_predictions):
-    """Print test summary"""
+    """Print summary of test results"""
     total_tests = len(TEST_CASES)
-    accuracy = (correct_predictions / total_tests) * 100
+    accuracy = (correct_predictions / total_tests) * 100 if total_tests > 0 else 0
     
-    print(f"\n{Fore.CYAN}📊 TEST SUMMARY{Style.RESET_ALL}")
-    print("=" * 50)
-    print(f"Total Tests: {total_tests}")
-    print(f"Correct Predictions: {Fore.GREEN}{correct_predictions}{Style.RESET_ALL}")
-    print(f"Incorrect Predictions: {Fore.RED}{total_tests - correct_predictions}{Style.RESET_ALL}")
-    print(f"Accuracy: {Fore.CYAN}{accuracy:.1f}%{Style.RESET_ALL}")
-    
-    if accuracy >= 80:
-        print(f"\n{Fore.GREEN}🎉 Excellent! The AI spam detection is working very well!{Style.RESET_ALL}")
-    elif accuracy >= 60:
-        print(f"\n{Fore.YELLOW}👍 Good performance! The AI spam detection is working reasonably well.{Style.RESET_ALL}")
-    else:
-        print(f"\n{Fore.RED}⚠️  The AI needs improvement. Consider adjusting the model or prompts.{Style.RESET_ALL}")
-    
-    # Show detailed results
-    print(f"\n{Fore.CYAN}📋 DETAILED RESULTS{Style.RESET_ALL}")
-    print("-" * 80)
+    print("\n" + "=" * 80)
+    print(f"{Fore.CYAN}AI SPAM DETECTION TEST SUMMARY{Style.RESET_ALL}")
+    print("=" * 80)
     
     for result in results:
-        status_color = Fore.GREEN if result['correct'] else Fore.RED
-        status_icon = "✅" if result['correct'] else "❌"
-        
-        print(f"{status_icon} {result['test_name']}")
-        print(f"   Expected: {result['expected']} | AI Result: {result['ai_result']} | Confidence: {result['confidence']:.2f}")
-        if not result['correct'] and result['ai_result'] != 'ERROR':
-            print(f"   {Fore.YELLOW}Reasoning: {result['reasoning'][:100]}...{Style.RESET_ALL}")
-        print()
+        status = f"{Fore.GREEN}PASS{Style.RESET_ALL}" if result["correct"] else f"{Fore.RED}FAIL{Style.RESET_ALL}"
+        if result["prediction"] == "ERROR":
+            status = f"{Fore.RED}ERROR{Style.RESET_ALL}"
+        print(f"Test: {result['name']:<30} | Expected: {result['expected']:<10} | Prediction: {result['prediction']:<10} | Status: {status}")
+        if result["prediction"] == "ERROR":
+            print(f"  └─ Error: {result.get('error')}")
+        elif not result["correct"]:
+            print(f"  └─ Reasoning: {result.get('reasoning', 'N/A')}")
+
+
+    print("-" * 80)
+    print(f"{Fore.CYAN}Overall Accuracy: {correct_predictions}/{total_tests} ({accuracy:.2f}%){Style.RESET_ALL}")
+    print("=" * 80)
 
 def main():
-    """Main test function"""
-    print(f"""
-{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗
-║                AI SPAM DETECTION TEST                        ║
-║              Standalone OLLAMA Testing                       ║
-╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
-
-This test will evaluate the AI's ability to detect spam in various types of messages.
-""")
+    """Main function to run tests"""
+    print(f"{Fore.BLUE}Starting AI Spam Detection Test Suite...{Style.RESET_ALL}")
     
-    # Suppress some logging for cleaner output
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('httpx').setLevel(logging.WARNING)
-    
-    # Test OLLAMA connection
-    client = test_ollama_connection()
-    if not client:
-        print(f"\n{Fore.RED}❌ Cannot proceed without OLLAMA connection.{Style.RESET_ALL}")
+    # Load configuration to ensure API keys and model names are available
+    try:
+        Config.validate()
+        logger.info("Configuration validated.")
+    except ValueError as e:
+        logger.error(f"{Fore.RED}❌ Configuration Error: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.YELLOW}Please ensure OPENAI_API_KEY is set in your .env file.{Style.RESET_ALL}")
         sys.exit(1)
-    
-    # Run spam detection tests
-    results, correct_predictions = run_spam_detection_tests(client)
-    
-    # Print summary
-    print_summary(results, correct_predictions)
-    
-    print(f"\n{Fore.GREEN}✅ AI spam detection test completed!{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}Next step: Configure your Freshdesk credentials in .env file to use the full system.{Style.RESET_ALL}")
+
+    ai_client = None
+    try:
+        ai_client = OpenAIClient()
+        logger.info(f"OpenAIClient initialized with model: {ai_client.model_name}")
+    except Exception as e:
+        logger.error(f"{Fore.RED}❌ Failed to initialize OpenAIClient: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.YELLOW}Ensure OPENAI_API_KEY is correctly set in .env and you have network access.{Style.RESET_ALL}")
+        sys.exit(1)
+
+    if ai_client:
+        results, correct_count = run_spam_detection_tests(ai_client)
+        print_summary(results, correct_count)
+    else:
+        logger.error(f"{Fore.RED}AI Client not initialized. Cannot run tests.{Style.RESET_ALL}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

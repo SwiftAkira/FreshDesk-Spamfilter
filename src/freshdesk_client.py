@@ -4,7 +4,7 @@ Freshdesk API Client for ticket management
 import requests
 import logging
 from typing import List, Dict, Optional
-from config import Config
+from .config import Config
 
 logger = logging.getLogger(__name__)
 

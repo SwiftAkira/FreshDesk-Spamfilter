@@ -1,8 +1,11 @@
-import openai
-import logging
+"""
+OpenAI API Client for spam detection
+"""
+import os
 import json
-from typing import Tuple, Dict
-from config import Config
+import logging
+from openai import OpenAI # Corrected import for OpenAI v1.x+
+from .config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +18,7 @@ class OpenAIClient:
             logger.error("OpenAI API key not configured. Please set OPENAI_API_KEY in your environment.")
             raise ValueError("OpenAI API key is missing.")
         
-        self.client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
         self.model = Config.OPENAI_MODEL_NAME
         logger.info(f"OpenAIClient initialized with model: {self.model}")
 

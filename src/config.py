@@ -14,10 +14,6 @@ class Config:
     FRESHDESK_DOMAIN = os.getenv('FRESHDESK_DOMAIN')
     FRESHDESK_API_KEY = os.getenv('FRESHDESK_API_KEY')
     
-    # OLLAMA Configuration
-    OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
-    OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3.2')
-    
     # OpenAI Configuration
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
     OPENAI_MODEL_NAME = os.getenv('OPENAI_MODEL_NAME', 'gpt-3.5-turbo') # Default to gpt-3.5-turbo
@@ -28,6 +24,11 @@ class Config:
     CHECK_INTERVAL_MINUTES = int(os.getenv('CHECK_INTERVAL_MINUTES', '5'))
     MAX_TICKETS_PER_BATCH = int(os.getenv('MAX_TICKETS_PER_BATCH', '50'))
     PROCESS_NEW_TICKETS_ONLY = os.getenv('PROCESS_NEW_TICKETS_ONLY', 'true').lower() == 'true'
+    AGENT_ID_TO_ASSIGN_SPAM = os.getenv('AGENT_ID_TO_ASSIGN_SPAM')
+    if AGENT_ID_TO_ASSIGN_SPAM and AGENT_ID_TO_ASSIGN_SPAM.isdigit():
+        AGENT_ID_TO_ASSIGN_SPAM = int(AGENT_ID_TO_ASSIGN_SPAM)
+    elif AGENT_ID_TO_ASSIGN_SPAM == 'None' or AGENT_ID_TO_ASSIGN_SPAM == '':
+        AGENT_ID_TO_ASSIGN_SPAM = None
 
     # Logging Configuration
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')

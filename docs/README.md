@@ -238,11 +238,11 @@ The project includes test suites to validate functionality:
 
 python test_ai_spam_detection.py    # Test AI spam detection with realistic examples
 python test_edge_cases.py           # Test edge cases and ambiguous content
-python test_ai_independence.py      # Verify AI makes content-based decisions (may need OLLAMA for older tests)
+python test_ai_independence.py      # Verify AI makes content-based decisions
 python test_new_tickets_only.py     # Verify only new tickets are processed
 python test_setup.py                # Validate configuration and connectivity
 ```
-Note: Some older tests like `test_ai_independence.py` might have been written with OLLAMA in mind and may need updates or to be run with a compatible local setup if OLLAMA was a core part of their original design.
+Note: Ensure your `.env` file is correctly configured with `OPENAI_API_KEY` for tests involving AI client interaction.
 
 ## Developer Setup
 
@@ -294,58 +294,43 @@ nano .env
 - **Error Handling**: Implement proper exception handling
 - **Testing**: Write tests for new functionality
 
-## Integration Patterns
+### Core Components
 
-### Custom Freshdesk Integration
+- `main.py`: Main application entry point for continuous monitoring.
+- `spam_filter.py`: Core spam filtering logic and `SpamFilter` class.
+- `freshdesk_client.py`: Handles communication with the Freshdesk API.
+- `openai_client.py`: Handles communication with the OpenAI API.
+- `config.py`: Manages application configuration from `.env` file.
+- `lambda_function.py`: AWS Lambda handler for serverless deployment.
 
-```python
-from freshdesk_client import FreshdeskClient
-from spam_filter import SpamFilter
+### Directory Structure
 
-# Custom ticket processing
-def process_specific_tickets():
-    client = FreshdeskClient()
-    spam_filter = SpamFilter()
-
-    # Get tickets with custom filters
-    tickets = client.get_tickets(status='open', limit=100)
-
-    for ticket in tickets:
-        result = spam_filter.analyze_ticket(ticket)
-        if result['is_spam']:
-            print(f"Spam detected: {ticket['id']}")
 ```
-
-### Custom AI Model Integration
-
-```python
-from ollama_client import OllamaClient
-
-# Use different model
-class CustomOllamaClient(OllamaClient):
-    def __init__(self, model_name='custom-model'):
-        super().__init__()
-        self.model = model_name
+Spam FIlter/
+├── .env.example            # Example environment file
+├── .gitignore              # Files to ignore in Git
+├── main.py                 # Main application script
+├── spam_filter.py          # Core spam filtering logic
+├── freshdesk_client.py     # Freshdesk API client
+├── openai_client.py        # OpenAI API client
+├── config.py               # Configuration management
+├── lambda_function.py      # AWS Lambda handler
+├── requirements.txt        # Python dependencies
+├── README.md               # This file
+├── ARCHITECTURE.md         # System architecture details
+├── API_REFERENCE.md        # API documentation
+├── CONFIGURATION.md        # Configuration guide
+├── DEPLOYMENT.MD           # Deployment instructions
+├── TROUBLESHOOTING.MD      # Troubleshooting guide
+├── CONTRIBUTING.MD         # Contribution guidelines
+├── test_*.py               # Test scripts
+└── logs/                   # Log files (if generated locally)
 ```
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
-
-- Development setup and workflow
-- Coding standards and style guide
-- Testing requirements
-- Pull request process
-- Issue reporting guidelines
-
-## Documentation
-
-- **[Architecture](ARCHITECTURE.md)** - System design and component interactions
-- **[API Reference](API_REFERENCE.md)** - Detailed API documentation
-- **[Configuration](CONFIGURATION.md)** - Complete configuration guide
-- **[Deployment](DEPLOYMENT.md)** - Deployment instructions and best practices
-- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
+Contributions are welcome! Please see `CONTRIBUTING.MD` for guidelines.
 
 ## License
 
-This project is open source. Please check the license file for details.
+This project is licensed under the MIT License - see the LICENSE.md file (if created) for details.

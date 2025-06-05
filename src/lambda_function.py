@@ -3,9 +3,9 @@ import logging
 import os
 
 # Assuming other project files (config, spam_filter, etc.) are in the same directory or in PYTHONPATH
-from config import Config
-from spam_filter import SpamFilter
-from main import setup_logging # Re-use logging setup from main.py if suitable
+from .config import Config
+from .spam_filter import SpamFilter
+from .main import setup_logging # Re-use logging setup from main.py if suitable
 
 # Initialize logger for Lambda
 # If reusing setup_logging, it might need adjustment for Lambda's specific logging context
@@ -22,16 +22,18 @@ def load_config_from_env():
     """Load configuration from Lambda environment variables into Config object for consistency."""
     Config.FRESHDESK_DOMAIN = os.environ.get('FRESHDESK_DOMAIN', Config.FRESHDESK_DOMAIN)
     Config.FRESHDESK_API_KEY = os.environ.get('FRESHDESK_API_KEY', Config.FRESHDESK_API_KEY)
-    Config.OLLAMA_HOST = os.environ.get('OLLAMA_HOST', Config.OLLAMA_HOST)
-    Config.OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', Config.OLLAMA_MODEL)
     Config.SPAM_THRESHOLD = float(os.environ.get('SPAM_THRESHOLD', str(Config.SPAM_THRESHOLD)))
     Config.AUTO_CLOSE_SPAM_THRESHOLD = float(os.environ.get('AUTO_CLOSE_SPAM_THRESHOLD', str(Config.AUTO_CLOSE_SPAM_THRESHOLD)))
     Config.PROCESS_NEW_TICKETS_ONLY = os.environ.get('PROCESS_NEW_TICKETS_ONLY', str(Config.PROCESS_NEW_TICKETS_ONLY)).lower() == 'true'
     Config.DRY_RUN_MODE = os.environ.get('DRY_RUN_MODE', str(Config.DRY_RUN_MODE)).lower() == 'true'
     
-    # Add OpenAI specific configs for Lambda env var loading
-    Config.OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', Config.OPENAI_API_KEY) # Will be loaded by Config class from os.getenv initially
+    Config.OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', Config.OPENAI_API_KEY)
     Config.OPENAI_MODEL_NAME = os.environ.get('OPENAI_MODEL_NAME', Config.OPENAI_MODEL_NAME)
+    Config.AGENT_ID_TO_ASSIGN_SPAM = os.environ.get('AGENT_ID_TO_ASSIGN_SPAM', Config.AGENT_ID_TO_ASSIGN_SPAM)
+    if Config.AGENT_ID_TO_ASSIGN_SPAM and isinstance(Config.AGENT_ID_TO_ASSIGN_SPAM, str) and Config.AGENT_ID_TO_ASSIGN_SPAM.isdigit():
+        Config.AGENT_ID_TO_ASSIGN_SPAM = int(Config.AGENT_ID_TO_ASSIGN_SPAM)
+    elif Config.AGENT_ID_TO_ASSIGN_SPAM == 'None' or Config.AGENT_ID_TO_ASSIGN_SPAM == '': # Handle string 'None' or empty string
+        Config.AGENT_ID_TO_ASSIGN_SPAM = None
 
     # IS_LAMBDA_ENVIRONMENT is already set correctly in config.py
 
@@ -50,7 +52,6 @@ load_config_from_env()
 
 # Initialize SpamFilter once during cold start if it doesn't rely on event-specific data for init
 # This can save initialization time on subsequent invocations.
-# However, ensure OLLAMA_HOST is set before this.
 try:
     spam_filter_instance = SpamFilter()
     logger.info("SpamFilter instance initialized globally for Lambda.")

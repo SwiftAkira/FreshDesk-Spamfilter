@@ -4,10 +4,9 @@ Core spam filtering logic
 import logging
 import time
 from typing import List, Dict, Optional
-from freshdesk_client import FreshdeskClient
-# from ollama_client import OllamaClient # Old client
-from openai_client import OpenAIClient # New OpenAI client
-from config import Config
+from .freshdesk_client import FreshdeskClient
+from .openai_client import OpenAIClient # New OpenAI client
+from .config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,6 @@ class SpamFilter:
     def __init__(self):
         """Initialize the spam filter"""
         self.freshdesk = FreshdeskClient()
-        # self.ollama = OllamaClient() # Old client instance
         self.ai_client = OpenAIClient() # New OpenAI client instance
         self.spam_threshold = Config.SPAM_THRESHOLD
         self.processed_tickets = set()  # Track processed tickets to avoid duplicates

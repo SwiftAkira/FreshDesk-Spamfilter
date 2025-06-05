@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
 Edge Case Spam Detection Test
-Tests challenging and ambiguous cases where spam/legitimate distinction is unclear
+Tests challenging and ambiguous cases with OpenAI to observe classification behavior.
+Ensure your .env file is configured with OPENAI_API_KEY and OPENAI_MODEL_NAME.
 """
 
 import sys
 import logging
 from colorama import init, Fore, Style
-from ollama_client import OllamaClient
+from src.openai_client import OpenAIClient
+from src.config import Config
 
 # Initialize colorama
 init()
+
+# Configure basic logging for the test script
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Challenging edge cases - intentionally ambiguous
 EDGE_CASES = [
@@ -39,7 +45,7 @@ DataFlow Solutions
 sarah.chen@dataflow-solutions.com
 LinkedIn: linkedin.com/in/sarahchen-bd""",
         "sender": "sarah.chen@dataflow-solutions.com",
-        "expected": "BORDERLINE - Could be legitimate business inquiry or sophisticated spam"
+        "expected_observation": "BORDERLINE - Could be legitimate business inquiry or sophisticated spam"
     },
     {
         "name": "Automated System Notification (Suspicious Elements)",
@@ -67,7 +73,7 @@ This is an automated message. Please do not reply to this email.
 Account Security Team
 Platform Security Division""",
         "sender": "noreply@platform-alerts.com",
-        "expected": "BORDERLINE - Could be legitimate security alert or phishing attempt"
+        "expected_observation": "BORDERLINE - Could be legitimate security alert or phishing attempt"
     },
     {
         "name": "Follow-up Customer Message (No Context)",
@@ -87,7 +93,7 @@ Alex Thompson
 Senior Manager
 alex.thompson@corporate-email.com""",
         "sender": "alex.thompson@corporate-email.com",
-        "expected": "BORDERLINE - Could be legitimate follow-up or social engineering"
+        "expected_observation": "BORDERLINE - Could be legitimate follow-up or social engineering"
     },
     {
         "name": "Professional Networking (Borders on Solicitation)",
@@ -116,7 +122,7 @@ ChatBot Innovations
 mark@chatbot-innovations.com
 Direct: (555) 987-6543""",
         "sender": "mark@chatbot-innovations.com",
-        "expected": "BORDERLINE - Professional networking that becomes sales pitch"
+        "expected_observation": "BORDERLINE - Professional networking that becomes sales pitch"
     },
     {
         "name": "Mixed Legitimate and Promotional Content",
@@ -147,7 +153,7 @@ Best regards,
 Customer Success Team
 Analytics Pro Solutions""",
         "sender": "orders@analytics-pro.com",
-        "expected": "BORDERLINE - Legitimate order confirmation mixed with promotional upsell"
+        "expected_observation": "BORDERLINE - Legitimate order confirmation mixed with promotional upsell"
     },
     {
         "name": "Vendor Inquiry (Professional but Unsolicited)",
@@ -182,166 +188,121 @@ CloudTech Enterprise
 jennifer.walsh@cloudtech-enterprise.com
 Direct: (555) 234-5678""",
         "sender": "jennifer.walsh@cloudtech-enterprise.com",
-        "expected": "BORDERLINE - Professional vendor outreach with research, but still unsolicited"
+        "expected_observation": "BORDERLINE - Professional vendor outreach with research, but still unsolicited"
     }
 ]
 
-def test_ollama_connection():
-    """Test OLLAMA connection"""
-    print(f"{Fore.CYAN}Testing OLLAMA Connection...{Style.RESET_ALL}")
-    
-    try:
-        client = OllamaClient()
-        print(f"{Fore.GREEN}✅ Successfully connected to OLLAMA{Style.RESET_ALL}")
-        print(f"  • Host: {client.host}")
-        print(f"  • Model: {client.model}")
-        return client
-        
-    except Exception as e:
-        print(f"{Fore.RED}❌ OLLAMA connection failed: {e}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}Please ensure OLLAMA is running: ollama serve{Style.RESET_ALL}")
-        return None
-
-def run_edge_case_tests(client):
+def run_edge_case_tests(client: OpenAIClient):
     """Run spam detection tests on edge cases"""
-    print(f"\n{Fore.CYAN}Running Edge Case Spam Detection Tests...{Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Running Edge Case Spam Detection Tests using OpenAI ({client.model_name})...{Style.RESET_ALL}")
     print("=" * 80)
-    print(f"{Fore.YELLOW}Note: These are intentionally ambiguous cases where classification may vary{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}Note: These are intentionally ambiguous cases. Observe AI classification, confidence, and reasoning.{Style.RESET_ALL}")
     print("=" * 80)
     
     results = []
     
     for i, test_case in enumerate(EDGE_CASES, 1):
-        print(f"\n{Fore.YELLOW}Edge Case {i}: {test_case['name']}{Style.RESET_ALL}")
+        print(f"\n{Fore.MAGENTA}Edge Case {i}: {test_case['name']}{Style.RESET_ALL}")
         print(f"Subject: {test_case['subject']}")
         print(f"Sender: {test_case['sender']}")
-        print(f"Challenge: {test_case['expected']}")
+        print(f"Intended Observation: {test_case['expected_observation']}")
         
         try:
-            # Analyze with AI - NOTE: We don't pass the expected result to the AI
-            is_spam, confidence, reasoning = client.analyze_spam(
+            is_spam_ai, confidence, reasoning = client.analyze_spam(
                 subject=test_case['subject'],
                 description=test_case['description'],
-                sender_email=test_case['sender']
+                sender_email=test_case['sender'],
+                is_system_validated=False
             )
             
-            # Determine result
-            ai_result = "SPAM" if is_spam else "NOT SPAM"
+            ai_classification = "SPAM" if is_spam_ai else "NOT SPAM"
             
-            # Color coding based on confidence
+            confidence_level_str = "LOW"
+            confidence_color = Fore.RED
             if confidence >= 0.8:
+                confidence_level_str = "HIGH"
                 confidence_color = Fore.GREEN
-                confidence_level = "HIGH"
-            elif confidence >= 0.6:
+            elif confidence >= 0.5:
+                confidence_level_str = "MEDIUM"
                 confidence_color = Fore.YELLOW
-                confidence_level = "MEDIUM"
-            else:
-                confidence_color = Fore.RED
-                confidence_level = "LOW"
             
-            print(f"AI Result: {Fore.CYAN}{ai_result}{Style.RESET_ALL}")
-            print(f"Confidence: {confidence_color}{confidence:.2f} ({confidence_level}){Style.RESET_ALL}")
+            print(f"AI Classification: {Fore.CYAN}{ai_classification}{Style.RESET_ALL}")
+            print(f"Confidence: {confidence_color}{confidence:.2f} ({confidence_level_str}){Style.RESET_ALL}")
             print(f"Reasoning: {reasoning}")
             
             results.append({
-                'test_name': test_case['name'],
-                'ai_result': ai_result,
+                'name': test_case['name'],
+                'expected_observation': test_case['expected_observation'],
+                'ai_classification': ai_classification,
                 'confidence': confidence,
-                'confidence_level': confidence_level,
-                'reasoning': reasoning,
-                'challenge': test_case['expected']
+                'confidence_level': confidence_level_str,
+                'reasoning': reasoning
             })
             
         except Exception as e:
-            print(f"{Fore.RED}❌ Error analyzing test case: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}❌ Error during AI analysis for edge case '{test_case['name']}': {e}{Style.RESET_ALL}")
             results.append({
-                'test_name': test_case['name'],
-                'ai_result': 'ERROR',
-                'confidence': 0.0,
-                'confidence_level': 'ERROR',
-                'reasoning': f"Error: {str(e)}",
-                'challenge': test_case['expected']
+                'name': test_case['name'],
+                'expected_observation': test_case['expected_observation'],
+                'ai_classification': 'ERROR',
+                'error': str(e)
             })
-        
         print("-" * 80)
-    
+            
     return results
 
 def analyze_edge_case_results(results):
-    """Analyze the results of edge case testing"""
-    print(f"\n{Fore.CYAN}📊 EDGE CASE ANALYSIS{Style.RESET_ALL}")
-    print("=" * 60)
+    """Analyze and print the summary of edge case tests (observational)."""
+    print("\n" + "=" * 80)
+    print(f"{Fore.CYAN}EDGE CASE TEST OBSERVATIONAL SUMMARY{Style.RESET_ALL}")
+    print("=" * 80)
     
-    spam_count = sum(1 for r in results if r['ai_result'] == 'SPAM')
-    not_spam_count = sum(1 for r in results if r['ai_result'] == 'NOT SPAM')
-    high_confidence = sum(1 for r in results if r['confidence'] >= 0.8)
-    medium_confidence = sum(1 for r in results if 0.6 <= r['confidence'] < 0.8)
-    low_confidence = sum(1 for r in results if r['confidence'] < 0.6)
-    
-    print(f"Total Edge Cases: {len(results)}")
-    print(f"Classified as SPAM: {Fore.RED}{spam_count}{Style.RESET_ALL}")
-    print(f"Classified as NOT SPAM: {Fore.GREEN}{not_spam_count}{Style.RESET_ALL}")
-    print()
-    print(f"High Confidence (≥0.8): {Fore.GREEN}{high_confidence}{Style.RESET_ALL}")
-    print(f"Medium Confidence (0.6-0.8): {Fore.YELLOW}{medium_confidence}{Style.RESET_ALL}")
-    print(f"Low Confidence (<0.6): {Fore.RED}{low_confidence}{Style.RESET_ALL}")
-    
-    print(f"\n{Fore.CYAN}📋 DETAILED EDGE CASE RESULTS{Style.RESET_ALL}")
-    print("-" * 80)
-    
+    if not results:
+        print(f"{Fore.YELLOW}No edge case results to display.{Style.RESET_ALL}")
+        return
+
     for result in results:
-        confidence_color = Fore.GREEN if result['confidence'] >= 0.8 else Fore.YELLOW if result['confidence'] >= 0.6 else Fore.RED
-        
-        print(f"🔍 {result['test_name']}")
-        print(f"   Result: {result['ai_result']} | Confidence: {confidence_color}{result['confidence']:.2f} ({result['confidence_level']}){Style.RESET_ALL}")
-        print(f"   Challenge: {result['challenge']}")
-        print(f"   AI Reasoning: {result['reasoning'][:150]}...")
-        print()
-    
-    # Analysis insights
-    print(f"{Fore.CYAN}🎯 INSIGHTS{Style.RESET_ALL}")
-    print("-" * 40)
-    
-    if low_confidence > 0:
-        print(f"• {low_confidence} cases had low confidence - these are truly ambiguous")
-    if high_confidence > len(results) * 0.5:
-        print(f"• AI showed high confidence in {high_confidence}/{len(results)} cases - good decisiveness")
-    else:
-        print(f"• AI showed uncertainty in many cases - appropriate for edge cases")
-    
-    print(f"• The AI is making nuanced decisions on borderline content")
-    print(f"• Results show the system can handle complex, real-world scenarios")
+        print(f"{Fore.MAGENTA}Test Case: {result['name']}{Style.RESET_ALL}")
+        print(f"  Expected Observation: {result['expected_observation']}")
+        if result['ai_classification'] == 'ERROR':
+            print(f"  AI Classification: {Fore.RED}ERROR - {result.get('error')}{Style.RESET_ALL}")
+        else:
+            print(f"  AI Classification: {Fore.CYAN}{result['ai_classification']}{Style.RESET_ALL}")
+            print(f"  Confidence: {result.get('confidence', 0.0):.2f} ({result.get('confidence_level', 'N/A')})")
+            print(f"  Reasoning: {result.get('reasoning', 'N/A')}")
+        print("-" * 50)
+
+    print("\n" + "=" * 80)
+    print(f"{Fore.YELLOW}This test is observational. Review the AI's reasoning for each ambiguous case.{Style.RESET_ALL}")
+    print("=" * 80)
 
 def main():
-    """Main test function"""
-    print(f"""
-{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗
-║                EDGE CASE SPAM DETECTION TEST                 ║
-║            Testing Ambiguous & Challenging Cases             ║
-╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
-
-This test evaluates the AI's performance on intentionally ambiguous cases where
-the distinction between spam and legitimate messages is unclear.
-""")
+    """Main function to run tests"""
+    print(f"{Fore.BLUE}Starting Edge Case AI Spam Detection Test Suite...{Style.RESET_ALL}")
     
-    # Suppress some logging for cleaner output
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('httpx').setLevel(logging.WARNING)
-    
-    # Test OLLAMA connection
-    client = test_ollama_connection()
-    if not client:
-        print(f"\n{Fore.RED}❌ Cannot proceed without OLLAMA connection.{Style.RESET_ALL}")
+    try:
+        Config.validate()
+        logger.info("Configuration validated.")
+    except ValueError as e:
+        logger.error(f"{Fore.RED}❌ Configuration Error: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.YELLOW}Please ensure OPENAI_API_KEY is set in your .env file.{Style.RESET_ALL}")
         sys.exit(1)
-    
-    # Run edge case tests
-    results = run_edge_case_tests(client)
-    
-    # Analyze results
-    analyze_edge_case_results(results)
-    
-    print(f"\n{Fore.GREEN}✅ Edge case testing completed!{Style.RESET_ALL}")
-    print(f"{Fore.YELLOW}These results show how the AI handles ambiguous, real-world scenarios.{Style.RESET_ALL}")
+
+    ai_client = None
+    try:
+        ai_client = OpenAIClient()
+        logger.info(f"OpenAIClient initialized with model: {ai_client.model_name}")
+    except Exception as e:
+        logger.error(f"{Fore.RED}❌ Failed to initialize OpenAIClient: {e}{Style.RESET_ALL}")
+        logger.error(f"{Fore.YELLOW}Ensure OPENAI_API_KEY is correctly set in .env and you have network access.{Style.RESET_ALL}")
+        sys.exit(1)
+
+    if ai_client:
+        edge_case_results = run_edge_case_tests(ai_client)
+        analyze_edge_case_results(edge_case_results)
+    else:
+        logger.error(f"{Fore.RED}AI Client not initialized. Cannot run edge case tests.{Style.RESET_ALL}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

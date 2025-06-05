@@ -44,7 +44,7 @@ Before contributing, ensure you have:
 
 1. **Python 3.8+** installed
 2. **Git** for version control
-3. **OLLAMA** for local AI models
+3. **OpenAI API Key** (for running tests that interact with the AI)
 4. **Code editor** with Python support (VS Code recommended)
 
 ### Fork and Clone
@@ -89,8 +89,11 @@ Edit `.env.dev` with test credentials:
 FRESHDESK_DOMAIN=test-company.freshdesk.com
 FRESHDESK_API_KEY=test_api_key_here
 
+# OpenAI Configuration (for development/testing)
+OPENAI_API_KEY=your_openai_api_key_for_dev_tests 
+OPENAI_MODEL_NAME=gpt-3.5-turbo # Or a specific model you are testing against
+
 # Development settings
-OLLAMA_MODEL=llama3.2
 SPAM_THRESHOLD=0.6
 CHECK_INTERVAL_MINUTES=1
 LOG_LEVEL=DEBUG
@@ -171,7 +174,8 @@ def analyze_spam(subject: str, description: str, sender_email: str = "") -> Tupl
         Exception: On AI processing errors
         
     Example:
-        >>> client = OllamaClient()
+        >>> from openai_client import OpenAIClient # Assuming client is configured
+        >>> client = OpenAIClient()
         >>> is_spam, confidence, reasoning = client.analyze_spam(
         ...     subject="Help with login",
         ...     description="I can't access my account"
@@ -227,6 +231,7 @@ logger.debug(f"API response: {response.json()}")
 2. **Integration Tests:** Test component interactions
 3. **End-to-End Tests:** Test complete workflows
 4. **Mock Tests:** Test without external dependencies
+   - **Mock External APIs:** Use mocks for Freshdesk and OpenAI API calls where appropriate to isolate units under test and avoid excessive real API calls during unit/integration testing.
 
 ### Writing Tests
 
@@ -281,7 +286,7 @@ python test_edge_cases.py
 ### Test Requirements
 
 - **Coverage:** Aim for >80% code coverage
-- **Mock External APIs:** Use mocks for Freshdesk and OLLAMA
+- **Mock External APIs:** Use mocks for Freshdesk and OpenAI
 - **Test Edge Cases:** Include error conditions and edge cases
 - **Performance Tests:** Test with realistic data volumes
 
@@ -351,34 +356,19 @@ Brief description of changes made.
 
 ### Bug Reports
 
-Use the bug report template:
+If you find a bug, please include:
 
-```markdown
-**Bug Description**
-Clear description of the bug.
-
-**Steps to Reproduce**
-1. Step one
-2. Step two
-3. Step three
-
-**Expected Behavior**
-What should happen.
-
-**Actual Behavior**
-What actually happens.
-
-**Environment**
-- OS: [e.g., Ubuntu 20.04]
-- Python Version: [e.g., 3.9.0]
-- OLLAMA Version: [e.g., 0.1.0]
-
-**Logs**
-Relevant log entries (sanitize sensitive data).
-
-**Additional Context**
-Any other relevant information.
-```
+- **Description:** Clear and concise summary of the bug
+- **Steps to Reproduce:** Detailed steps to reproduce the behavior
+- **Expected Behavior:** What you expected to happen
+- **Actual Behavior:** What actually happened
+- **Error Messages/Logs:** Full error messages and relevant log snippets
+- **Environment:**
+    - Python Version: [e.g., 3.9.5]
+    - Operating System: [e.g., macOS, Windows, Linux]
+    - OpenAI Model Name (if relevant): [e.g., gpt-3.5-turbo]
+    - Key Configuration (from .env, excluding secrets): [e.g., SPAM_THRESHOLD, PROCESS_NEW_TICKETS_ONLY]
+- **Screenshots/Videos:** (Optional) If helpful for demonstrating the issue
 
 ### Feature Requests
 

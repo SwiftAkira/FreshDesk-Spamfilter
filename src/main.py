@@ -12,8 +12,8 @@ import schedule
 import sys
 from datetime import datetime
 from colorama import init, Fore, Style
-from config import Config
-from spam_filter import SpamFilter
+from .config import Config
+from .spam_filter import SpamFilter
 
 # Initialize colorama for colored output
 init()
@@ -140,24 +140,27 @@ def show_help():
 {Fore.CYAN}Freshdesk Spam Filter - Usage{Style.RESET_ALL}
 
 {Fore.GREEN}Commands:{Style.RESET_ALL}
-  python main.py                 - Run continuously (default)
-  python main.py --once          - Run once and exit
+  python main.py                 - Run continuously (default, polls Freshdesk)
+  python main.py --once          - Run once for a batch of tickets and exit
+  python main.py --test          - Run in DRY RUN mode (no actual changes to Freshdesk, can be combined with --once or continuous)
   python main.py --help          - Show this help
 
-{Fore.GREEN}Configuration:{Style.RESET_ALL}
+{Fore.GREEN}Configuration (via .env file):{Style.RESET_ALL}
   Copy .env.example to .env and configure your settings:
-  • FRESHDESK_DOMAIN: Your Freshdesk domain
+  • FRESHDESK_DOMAIN: Your Freshdesk subdomain (e.g., yourcompany)
   • FRESHDESK_API_KEY: Your Freshdesk API key
-  • OLLAMA_HOST: OLLAMA server URL (default: http://localhost:11434)
-  • OLLAMA_MODEL: AI model to use (default: llama3.2)
+  • OPENAI_API_KEY: Your OpenAI API key
+  • OPENAI_MODEL_NAME: AI model to use (e.g., gpt-3.5-turbo)
+  • See CONFIGURATION.md for all options (thresholds, agent ID, etc.)
 
-{Fore.GREEN}Setup:{Style.RESET_ALL}
-  1. Install dependencies: pip install -r requirements.txt
-  2. Configure .env file with your credentials
-  3. Ensure OLLAMA is running with your chosen model
-  4. Run the application
+{Fore.GREEN}Setup (for local execution):{Style.RESET_ALL}
+  1. Ensure Python 3.8+ is installed.
+  2. Create a virtual environment: python3 -m venv venv && source venv/bin/activate
+  3. Install dependencies: pip install -r requirements.txt
+  4. Configure .env file with your Freshdesk and OpenAI credentials.
+  5. Run the application (e.g., python main.py)
 
-{Fore.YELLOW}Note:{Style.RESET_ALL} Make sure OLLAMA is running and the specified model is available.
+{Fore.YELLOW}Note:{Style.RESET_ALL} For production, AWS Lambda deployment is recommended (see DEPLOYMENT.md).
 """
     print(help_text)
 
